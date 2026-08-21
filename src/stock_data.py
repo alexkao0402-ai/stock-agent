@@ -1,6 +1,5 @@
 # stock_data.py
 # 這個檔案負責處理「跟股票資料有關」的功能
-# 這一步：把 API 拿回來的原始 JSON 資料，整理成乾淨的 pandas 表格
 
 import os
 import requests
@@ -34,20 +33,9 @@ def clean_stock_data(raw_data):
     raw_data: get_daily_stock_data() 回傳的字典
     回傳：一個 pandas DataFrame，欄位為 date, open, high, low, close, volume
     """
-
-    # 只取出我們真正需要的那一大包：「Time Series (Daily)」
     daily_data = raw_data["Time Series (Daily)"]
-
-    # pd.DataFrame.from_dict() 可以直接把「字典包字典」的結構轉成表格
-    # orient="index" 代表：外層的 key（日期）要變成表格的「row（列）」
     df = pd.DataFrame.from_dict(daily_data, orient="index")
-
-    # 這時候欄位名稱還是 API 給的原始名稱，例如 "1. open"、"2. high"
-    # 我們把它們改成更乾淨好用的名稱
     df.columns = ["open", "high", "low", "close", "volume"]
-
-    # 目前資料裡的數字其實是「文字」格式（例如 "8.9900"），要轉成真正的數字
-    # astype(float) 把整欄轉成浮點數；volume 轉成整數比較合理
     df = df.astype({
         "open": float,
         "high": float,
@@ -55,16 +43,11 @@ def clean_stock_data(raw_data):
         "close": float,
         "volume": int
     })
-
-    # 目前「日期」是表格的 index（列名稱），不是欄位，我們把它變成一個獨立欄位
     df.index.name = "date"
     df = df.reset_index()
-
-    # API 回傳的資料是「最新日期在最上面」，我們把它反過來，讓「最舊日期在最上面」
-    # 這樣之後畫圖、分析時間趨勢會比較直覺
     df = df.sort_values("date").reset_index(drop=True)
-
     return df
+
 
 def get_news_sentiment(symbol, limit=20):
     """
@@ -73,7 +56,6 @@ def get_news_sentiment(symbol, limit=20):
     limit: 最多抓幾則新聞，預設 20 則
     回傳：一個 list，每一項是一則新聞的重點資訊（字典格式）
     """
-
     url = "https://www.alphavantage.co/query"
     params = {
         "function": "NEWS_SENTIMENT",
@@ -81,17 +63,14 @@ def get_news_sentiment(symbol, limit=20):
         "limit": limit,
         "apikey": api_key
     }
-
     response = requests.get(url, params=params)
     data = response.json()
 
-    # 如果 API 沒有回傳新聞資料（例如額度用完、或這支股票沒有新聞），回傳空清單
     if "feed" not in data:
         return []
 
     news_list = []
     for item in data["feed"]:
-        # 每則新聞我們只保留最重要的幾個欄位，不要整包塞給 AI（避免資料太雜太長）
         news_list.append({
             "title": item.get("title"),
             "time_published": item.get("time_published"),
@@ -102,16 +81,49 @@ def get_news_sentiment(symbol, limit=20):
 
     return news_list
 
+
+def get_company_overview(symbol):
+    """
+    向 Alpha Vantage 要某支股票的公司基本面總覽資料。
+    symbol: 股票代號，例如 "BTDR"
+    回傳：一個字典，包含市值、本益比、營收等重要指標
+    """
+    url = "https://www.alphavantage.co/query"
+    params = {
+        "function": "OVERVIEW",
+        "symbol": symbol,
+        "apikey": api_key
+    }
+    response = requests.get(url, params=params)
+    data = response.json()
+
+    if not data or "Symbol" not in data:
+        return {}
+
+    overview = {
+        "公司名稱": data.get("Name"),
+        "產業別": data.get("Industry"),
+        "市值": data.get("MarketCapitalization"),
+        "本益比": data.get("PERatio"),
+        "每股盈餘": data.get("EPS"),
+        "毛利率": data.get("GrossProfitTTM"),
+        "營收(近12個月)": data.get("RevenueTTM"),
+        "營業利益率": data.get("OperatingMarginTTM"),
+        "股價淨值比": data.get("PriceToBookRatio"),
+        "52週最高價": data.get("52WeekHigh"),
+        "52週最低價": data.get("52WeekLow"),
+        "公司簡介": data.get("Description")
+    }
+
+    return overview
+
+
 if __name__ == "__main__":
     raw = get_daily_stock_data("BTDR")
     df = clean_stock_data(raw)
-
-    # 印出表格的前 5 筆和後 5 筆，快速檢查資料長什麼樣子
     print(df.head())
     print("...")
     print(df.tail())
-
-    # 印出這張表格的基本資訊：總共幾列、每欄的資料型態
     print("\n資料筆數與型態：")
     print(df.info())
 
@@ -124,3 +136,11 @@ if __name__ == "__main__":
         print(f"情緒：{n['overall_sentiment_label']}")
         print(f"來源：{n['source']}")
         print("---")
+
+    print("\n\n===== 公司基本面測試 =====")
+    overview = get_company_overview("BTDR")
+    for key, value in overview.items():
+        if key == "公司簡介":
+            print(f"{key}：{str(value)[:100]}...")
+        else:
+            print(f"{key}：{value}")
