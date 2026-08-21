@@ -29,7 +29,11 @@ if st.button("開始分析"):
         else:
             df = clean_stock_data(raw_data)
             st.success(f"成功取得 {len(df)} 筆股價資料，時間範圍：{df['date'].iloc[0]} ~ {df['date'].iloc[-1]}")
-
+            # 畫出收盤價走勢圖
+            # st.line_chart() 需要「日期」當作索引（index），"close" 欄位當作要畫的數值
+            chart_data = df.set_index("date")[["close"]]
+            st.line_chart(chart_data)
+            
             with st.spinner(f"正在抓取 {symbol} 的相關新聞..."):
                 time.sleep(15)
                 news_list = get_news_sentiment(symbol, limit=20)
