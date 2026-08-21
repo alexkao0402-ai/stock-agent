@@ -29,11 +29,7 @@ if st.button("開始分析"):
         else:
             df = clean_stock_data(raw_data)
             st.success(f"成功取得 {len(df)} 筆股價資料，時間範圍：{df['date'].iloc[0]} ~ {df['date'].iloc[-1]}")
-            # 畫出收盤價走勢圖
-            # st.line_chart() 需要「日期」當作索引（index），"close" 欄位當作要畫的數值
-            chart_data = df.set_index("date")[["close"]]
-            st.line_chart(chart_data)
-            
+
             with st.spinner(f"正在抓取 {symbol} 的相關新聞..."):
                 time.sleep(15)
                 news_list = get_news_sentiment(symbol, limit=20)
@@ -43,5 +39,23 @@ if st.button("開始分析"):
                 report = generate_report(symbol, df, news_list)
 
             st.markdown("---")
-            st.subheader("研究報告")
-            st.markdown(report)
+
+            # 建立三個分頁
+            tab1, tab2, tab3 = st.tabs(["📄 AI 研究報告", "📈 原始股價資料", "📰 新聞列表"])
+
+            with tab1:
+                # 分頁一：先放圖表，再放 AI 報告
+                chart_data = df.set_index("date")[["close"]]
+                st.line_chart(chart_data)
+                st.markdown(report)
+
+            with tab2:
+                # 分頁二：股價表格，由新到舊排序比較方便查看最新資料
+                st.dataframe(df.sort_values("date", ascending=False), use_container_width=True)
+
+            with tab3:
+                # 分頁三：新聞清單，用迴圈逐則顯示
+                for n in news_list:
+                    st.markdown(f"**{n['title']}**")
+                    st.caption(f"{n['time_published']}　|　{n['source']}　|　情緒：{n['overall_sentiment_label']}")
+                    st.markdown("---")
