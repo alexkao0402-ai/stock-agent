@@ -66,6 +66,41 @@ def clean_stock_data(raw_data):
 
     return df
 
+def get_news_sentiment(symbol, limit=20):
+    """
+    向 Alpha Vantage 要某支股票最近的相關新聞，附帶情緒分析分數。
+    symbol: 股票代號，例如 "BTDR"
+    limit: 最多抓幾則新聞，預設 20 則
+    回傳：一個 list，每一項是一則新聞的重點資訊（字典格式）
+    """
+
+    url = "https://www.alphavantage.co/query"
+    params = {
+        "function": "NEWS_SENTIMENT",
+        "tickers": symbol,
+        "limit": limit,
+        "apikey": api_key
+    }
+
+    response = requests.get(url, params=params)
+    data = response.json()
+
+    # 如果 API 沒有回傳新聞資料（例如額度用完、或這支股票沒有新聞），回傳空清單
+    if "feed" not in data:
+        return []
+
+    news_list = []
+    for item in data["feed"]:
+        # 每則新聞我們只保留最重要的幾個欄位，不要整包塞給 AI（避免資料太雜太長）
+        news_list.append({
+            "title": item.get("title"),
+            "time_published": item.get("time_published"),
+            "summary": item.get("summary"),
+            "overall_sentiment_label": item.get("overall_sentiment_label"),
+            "source": item.get("source")
+        })
+
+    return news_list
 
 if __name__ == "__main__":
     raw = get_daily_stock_data("BTDR")
@@ -79,3 +114,13 @@ if __name__ == "__main__":
     # 印出這張表格的基本資訊：總共幾列、每欄的資料型態
     print("\n資料筆數與型態：")
     print(df.info())
+
+    print("\n\n===== 新聞資料測試 =====")
+    news = get_news_sentiment("BTDR", limit=5)
+    print(f"抓到 {len(news)} 則新聞\n")
+    for n in news:
+        print(f"標題：{n['title']}")
+        print(f"時間：{n['time_published']}")
+        print(f"情緒：{n['overall_sentiment_label']}")
+        print(f"來源：{n['source']}")
+        print("---")
