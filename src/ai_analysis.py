@@ -136,3 +136,88 @@ def generate_report(symbol, df, news_list=None, overview=None):
     report_text = message.content[0].text
 
     return report_text
+
+import json
+
+
+def extract_structured_data(symbol, current_price, report_text):
+    """
+    把已經生成的文字報告，交給 AI 整理成結構化的 JSON 數字資料。
+    這一步只負責「格式轉換」，不做新的分析判斷，只是把報告裡已經提到的數字整理出來。
+
+    symbol: 股票代號
+    current_price: 目前股價（分析當下最後一筆收盤價）
+    report_text: generate_report() 產生的文字報告
+    回傳：一個 Python 字典（如果解析失敗，回傳 None）
+    """
+
+    extraction_prompt = f"""以下是一份關於 {symbol} 的股票研究報告：
+
+{report_text}
+
+請從這份報告中，把「未來情境推估」與「參考價位區間」部分提到的數字，整理成純 JSON 格式輸出。
+
+規則：
+- 只能輸出 JSON，前後不要有任何其他文字、說明、或 Markdown 符號（不要用```json 包起來）
+- 如果報告中某個數字沒有明確提到，該欄位請填 null，不要自己編造
+- JSON 格式如下：
+
+{{
+  "current_price": {current_price},
+  "bull_low": 數字或null,
+  "bull_high": 數字或null,
+  "base_low": 數字或null,
+  "base_high": 數字或null,
+  "bear_low": 數字或null,
+  "bear_high": 數字或null,
+  "entry_zone_low": 數字或null,
+  "entry_zone_high": 數字或null,
+  "take_profit_low": 數字或null,
+  "take_profit_high": 數字或null,
+  "invalidation_down": 數字或null,
+  "invalidation_up": 數字或null
+}}"""
+
+    message = client.messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=500,
+        messages=[
+            {"role": "user", "content": extraction_prompt}
+        ]
+    )
+
+    raw_text = message.content[0].text.strip()
+
+    # AI 有時候會習慣性地在 JSON 外面包上 ```json 和 ``` 這種 Markdown 符號
+    # 這裡做清理：如果偵測到這些符號，就把它們去掉，只留下純 JSON 內容
+    if raw_text.startswith("```"):
+        # 去掉開頭的 ```json 或 ```（可能後面還接著換行）
+        raw_text = raw_text.split("\n", 1)[1] if "\n" in raw_text else raw_text
+        # 去掉結尾的 ```
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
+        raw_text = raw_text.strip()
+
+    try:
+        structured_data = json.loads(raw_text)
+        return structured_data
+    except json.JSONDecodeError:
+        return None
+
+if __name__ == "__main__":
+    from src.stock_data import get_daily_stock_data, clean_stock_data, get_news_sentiment, get_company_overview
+
+    raw = get_daily_stock_data("BTDR")
+    df = clean_stock_data(raw)
+    news = get_news_sentiment("BTDR", limit=10)
+    overview = get_company_overview("BTDR")
+
+    report = generate_report("BTDR", df, news, overview)
+    print("===== 文字報告（節錄前500字）=====")
+    print(report[:500])
+
+    current_price = df["close"].iloc[-1]
+    structured = extract_structured_data("BTDR", current_price, report)
+
+    print("\n\n===== 結構化資料 =====")
+    print(structured)

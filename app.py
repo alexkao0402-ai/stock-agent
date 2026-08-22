@@ -4,7 +4,7 @@
 
 import streamlit as st
 from src.stock_data import get_daily_stock_data, clean_stock_data, get_news_sentiment, get_company_overview
-from src.ai_analysis import generate_report
+from src.ai_analysis import generate_report, extract_structured_data
 import time
 
 st.set_page_config(page_title="AI 股票研究助理", page_icon="📈")
@@ -46,10 +46,14 @@ if st.button("開始分析"):
             with st.spinner("正在請 AI 分析資料，請稍候（約需 30 秒到 1 分鐘）..."):
                 report = generate_report(symbol, df, news_list, overview)
 
+            with st.spinner("正在整理結構化數據..."):
+                current_price = df["close"].iloc[-1]
+                structured = extract_structured_data(symbol, current_price, report)
+
             st.markdown("---")
 
-            # 建立四個分頁
-            tab1, tab2, tab3, tab4 = st.tabs(["📄 AI 研究報告", "📈 原始股價資料", "📰 新聞列表", "🏢 公司基本面"])
+            # 建立五個分頁
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["📄 AI 研究報告", "📈 原始股價資料", "📰 新聞列表", "🏢 公司基本面", "🔢 結構化數據"])
 
             with tab1:
                 chart_data = df.set_index("date")[["close"]]
@@ -75,3 +79,10 @@ if st.button("開始分析"):
                             st.markdown(f"**{key}**：{value}")
                 else:
                     st.write("未取得公司基本面資料。")
+
+            with tab5:
+                st.caption("這是從 AI 報告中萃取出的結構化數字，可用於之後的預測追蹤與回測。")
+                if structured:
+                    st.json(structured)
+                else:
+                    st.warning("這次未能成功解析出結構化數據，AI 回傳格式可能不符預期。")
