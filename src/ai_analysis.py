@@ -1,5 +1,5 @@
 # ai_analysis.py
-# 這個檔案負責處理「把股價資料 + 新聞資料交給 AI 分析」的功能
+# 這個檔案負責處理「把股價資料 + 新聞資料 + 公司基本面資料交給 AI 分析」的功能
 
 import os
 from anthropic import Anthropic
@@ -13,12 +13,7 @@ client = Anthropic()
 def format_news_for_prompt(news_list, max_items=15):
     """
     把新聞清單整理成一段文字，方便放進 prompt 裡給 AI 看。
-    news_list: get_news_sentiment() 回傳的 list
-    max_items: 最多放幾則新聞進 prompt（避免內容太長、太花費）
-    回傳：一段文字
     """
-
-    # 只取前 max_items 則，避免 prompt 太長
     selected_news = news_list[:max_items]
 
     if not selected_news:
@@ -26,29 +21,49 @@ def format_news_for_prompt(news_list, max_items=15):
 
     lines = []
     for n in selected_news:
-        # 把每則新聞整理成一行，格式：[時間] [情緒] 標題
         line = f"- [{n['time_published']}] [{n['overall_sentiment_label']}] {n['title']}"
         lines.append(line)
 
     return "\n".join(lines)
 
 
-def generate_report(symbol, df, news_list=None):
+def format_overview_for_prompt(overview):
     """
-    把清理好的股價表格 (DataFrame) 和新聞清單，交給 Claude 產出研究報告。
+    把公司基本面資料整理成一段文字，方便放進 prompt 裡給 AI 看。
+    """
+    if not overview:
+        return "（目前沒有取得公司基本面資料）"
+
+    lines = []
+    for key, value in overview.items():
+        if key == "公司簡介":
+            value = str(value)[:200] + "..."
+        lines.append(f"- {key}：{value}")
+
+    return "\n".join(lines)
+
+
+def generate_report(symbol, df, news_list=None, overview=None):
+    """
+    把清理好的股價表格 (DataFrame)、新聞清單、公司基本面資料，交給 Claude 產出研究報告。
     symbol: 股票代號，例如 "BTDR"
     df: clean_stock_data() 產生的 pandas DataFrame
     news_list: get_news_sentiment() 產生的新聞清單，可以不提供（預設 None）
+    overview: get_company_overview() 產生的基本面字典，可以不提供（預設 None）
     回傳：AI 生成的文字報告（字串）
     """
 
     data_text = df.to_string(index=False)
 
-    # 如果有提供新聞資料，就整理成文字；沒有的話就給一個提示文字
     if news_list:
         news_text = format_news_for_prompt(news_list)
     else:
         news_text = "（本次分析未提供新聞資料）"
+
+    if overview:
+        overview_text = format_overview_for_prompt(overview)
+    else:
+        overview_text = "（本次分析未提供公司基本面資料）"
 
     prompt = f"""你是一位專業的股票研究分析師。
 
@@ -60,15 +75,22 @@ def generate_report(symbol, df, news_list=None):
 
 {news_text}
 
-請根據以上「歷史價格資料」與「新聞資料」，用繁體中文寫一份研究報告，分成以下兩大部分：
+以下是這家公司的基本面總覽資料：
 
-## 第一部分：歷史回顧
+{overview_text}
+
+請根據以上「歷史價格資料」「新聞資料」「公司基本面資料」，用繁體中文寫一份研究報告，分成以下四大部分：
+
+## 第一部分：基本面摘要
+用 3-4 句話總結這家公司目前的基本面體質：市值規模、獲利能力（本益比、每股盈餘是否合理）、營收與毛利表現，並簡述公司主要業務。如果某些數字缺失或不適用，請誠實說明「資料不足」，不要瞎猜數字。
+
+## 第二部分：歷史回顧
 1. 這段期間股價大致的走勢（上漲、下跌、盤整）
 2. 波動最大的幾個時間點，並嘗試對應到附近時間點是否有相關新聞可以解釋這個變化
 3. 成交量有沒有出現異常放大的時候，是否與新聞事件時間點吻合
 4. 目前市場新聞的整體情緒氛圍（偏多、偏空、中立）
 
-## 第二部分：未來情境推估
+## 第三部分：未來情境推估
 請注意，這一部分**不是預測**，而是「根據目前已知資訊，推估幾種可能的走向」。
 請列出三種情境，每種情境都要包含：「觸發條件」「大致的價格區間」「推估邏輯」：
 
@@ -83,14 +105,14 @@ def generate_report(symbol, df, news_list=None):
 ### Bear Case（悲觀情境）
 - 同上結構
 
-## 第三部分：參考價位區間
+## 第四部分：參考價位區間
 在完成三情境分析後，請根據目前股價位置與歷史波動特性，額外提供以下三個參考區間：
 
 ### 潛在進場區（Entry Zone）
-如果有人想根據這份分析考慮進場，從風險報酬的角度來看，大約在什麼價格區間介入，相對比較合理？請說明理由（例如靠近某個歷史支撐位、某情境的低點附近等）。
+如果有人想根據這份分析考慮進場，從風險報酬的角度來看，大約在什麼價格區間介入，相對比較合理？請說明理由。
 
 ### 潛在停利區（Take-Profit Zone）
-如果進場後股價朝 Bull Case 或 Base Case 發展，大約在什麼價格區間附近，可以考慮獲利了結？請說明理由（例如接近某個歷史壓力位、前高附近等）。
+如果進場後股價朝 Bull Case 或 Base Case 發展，大約在什麼價格區間附近，可以考慮獲利了結？請說明理由。
 
 ### 論點失效價位（Invalidation Level）
 如果股價跌破（或漲破）什麼價位，代表這整份分析的前提假設可能是錯的，應該重新檢視整個判斷，而不是繼續套用這份報告的邏輯？請說明理由。

@@ -1,9 +1,9 @@
 # app.py
 # 這是 Streamlit 網頁版的入口
-# 這一步：把輸入框、按鈕接上完整的分析流程
+# 這一步：加入公司基本面資料，串接完整的分析流程
 
 import streamlit as st
-from src.stock_data import get_daily_stock_data, clean_stock_data, get_news_sentiment
+from src.stock_data import get_daily_stock_data, clean_stock_data, get_news_sentiment, get_company_overview
 from src.ai_analysis import generate_report
 import time
 
@@ -35,27 +35,43 @@ if st.button("開始分析"):
                 news_list = get_news_sentiment(symbol, limit=20)
             st.success(f"成功取得 {len(news_list)} 則新聞")
 
+            with st.spinner(f"正在抓取 {symbol} 的公司基本面資料..."):
+                time.sleep(15)
+                overview = get_company_overview(symbol)
+            if overview:
+                st.success("成功取得公司基本面資料")
+            else:
+                st.info("未取得公司基本面資料，報告將僅根據股價與新聞進行分析")
+
             with st.spinner("正在請 AI 分析資料，請稍候（約需 30 秒到 1 分鐘）..."):
-                report = generate_report(symbol, df, news_list)
+                report = generate_report(symbol, df, news_list, overview)
 
             st.markdown("---")
 
-            # 建立三個分頁
-            tab1, tab2, tab3 = st.tabs(["📄 AI 研究報告", "📈 原始股價資料", "📰 新聞列表"])
+            # 建立四個分頁
+            tab1, tab2, tab3, tab4 = st.tabs(["📄 AI 研究報告", "📈 原始股價資料", "📰 新聞列表", "🏢 公司基本面"])
 
             with tab1:
-                # 分頁一：先放圖表，再放 AI 報告
                 chart_data = df.set_index("date")[["close"]]
                 st.line_chart(chart_data)
                 st.markdown(report)
 
             with tab2:
-                # 分頁二：股價表格，由新到舊排序比較方便查看最新資料
                 st.dataframe(df.sort_values("date", ascending=False), use_container_width=True)
 
             with tab3:
-                # 分頁三：新聞清單，用迴圈逐則顯示
                 for n in news_list:
                     st.markdown(f"**{n['title']}**")
                     st.caption(f"{n['time_published']}　|　{n['source']}　|　情緒：{n['overall_sentiment_label']}")
                     st.markdown("---")
+
+            with tab4:
+                if overview:
+                    for key, value in overview.items():
+                        if key == "公司簡介":
+                            st.markdown(f"**{key}**")
+                            st.write(value)
+                        else:
+                            st.markdown(f"**{key}**：{value}")
+                else:
+                    st.write("未取得公司基本面資料。")
