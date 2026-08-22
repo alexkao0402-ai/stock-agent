@@ -6,7 +6,9 @@ import streamlit as st
 from src.stock_data import get_daily_stock_data, clean_stock_data, get_news_sentiment, get_company_overview
 from src.ai_analysis import generate_report, extract_structured_data
 from src.prediction_tracker import save_prediction, list_predictions, check_prediction_outcome
+from src.strategy import add_moving_averages, add_signals, run_backtest
 import time
+
 
 st.set_page_config(page_title="AI 股票研究助理", page_icon="📈")
 
@@ -57,9 +59,8 @@ if st.button("開始分析"):
 
             st.markdown("---")
 
-            # 建立五個分頁
-            tab1, tab2, tab3, tab4, tab5 = st.tabs(["📄 AI 研究報告", "📈 原始股價資料", "📰 新聞列表", "🏢 公司基本面", "🔢 結構化數據"])
-
+            # 建立六個分頁
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📄 AI 研究報告", "📈 原始股價資料", "📰 新聞列表", "🏢 公司基本面", "🔢 結構化數據", "📉 均線策略回測"])
             with tab1:
                 chart_data = df.set_index("date")[["close"]]
                 st.line_chart(chart_data)
@@ -91,6 +92,35 @@ if st.button("開始分析"):
                     st.json(structured)
                 else:
                     st.warning("這次未能成功解析出結構化數據，AI 回傳格式可能不符預期。")
+
+            with tab6:
+                st.caption("這是一個規則型策略（均線交叉），完全不使用 AI 判斷，純粹依歷史股價計算，避免先見偏誤。")
+
+                df_ma = add_moving_averages(df)
+                df_signals = add_signals(df_ma)
+
+                # 畫出收盤價 + 兩條均線的走勢圖，方便直觀看出交叉點
+                chart_df = df_signals.set_index("date")[["close", "ma_short", "ma_long"]]
+                st.line_chart(chart_df)
+
+                # 顯示所有觸發過的訊號
+                signal_rows = df_signals[df_signals["signal"].notna()]
+                st.subheader("觸發訊號")
+                if len(signal_rows) > 0:
+                    st.dataframe(signal_rows[["date", "close", "ma_short", "ma_long", "signal"]], use_container_width=True)
+                else:
+                    st.write("這段期間沒有觸發任何交叉訊號。")
+
+                # 執行回測，顯示績效
+                st.subheader("回測績效（模擬本金 $10,000）")
+                backtest_result = run_backtest(df_signals)
+
+                col1, col2, col3 = st.columns(3)
+                col1.metric("最終價值", f"${backtest_result['final_value']:,}")
+                col2.metric("總報酬率", f"{backtest_result['total_return_pct']}%")
+                col3.metric("交易次數", backtest_result['number_of_trades'])
+
+                st.caption("⚠️ 此回測結果僅反映過去這段期間的表現，不代表未來績效，且未考慮手續費與滑點。")
 
 st.markdown("---")
 st.header("📊 歷史預測回顧")
