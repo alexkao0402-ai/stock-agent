@@ -17,9 +17,9 @@
   "take_profit_high": 14,
   "invalidation_down": 6.5,
   "invalidation_up": 15.5,
-  "outcome_checked": false,
-  "actual_price_at_check": null,
-  "actual_return_pct": null,
-  "which_scenario_occurred": null,
-  "checked_at": null
+  "outcome_checked": true,
+  "actual_price_at_check": 11.37,
+  "actual_return_pct": 0.0,
+  "which_scenario_occurred": "base",
+  "checked_at": "2026-08-22T14:00:53"
 }

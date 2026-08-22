@@ -93,3 +93,78 @@ def list_predictions(symbol=None):
             records.append(record)
 
     return records
+
+def classify_scenario(actual_price, record):
+    """
+    判斷「實際股價」落在當初預測的哪個情境。
+
+    actual_price: 現在的實際股價
+    record: 一筆預測紀錄（字典），裡面應該要有 bull_low/high、base_low/high、bear_low/high
+
+    回傳：一個字串，代表落在哪個情境
+    """
+
+    if actual_price is None:
+        return None
+
+    # 把三個情境的價格區間整理成一個清單，方便逐一檢查
+    scenarios = [
+        ("bear", record.get("bear_low"), record.get("bear_high")),
+        ("base", record.get("base_low"), record.get("base_high")),
+        ("bull", record.get("bull_low"), record.get("bull_high")),
+    ]
+
+    # 檢查實際股價有沒有落在某個情境的區間內
+    for name, low, high in scenarios:
+        if low is not None and high is not None and low <= actual_price <= high:
+            return name
+
+    # 如果沒有落在任何區間內，判斷是「比熊市情境還低」還是「比牛市情境還高」
+    bear_low = record.get("bear_low")
+    bull_high = record.get("bull_high")
+
+    if bear_low is not None and actual_price < bear_low:
+        return "below_bear（比悲觀情境還低）"
+    if bull_high is not None and actual_price > bull_high:
+        return "above_bull（比樂觀情境還高）"
+
+    return "between_scenarios（介於情境之間，例如base與bull的空隙）"
+
+
+def check_prediction_outcome(record, actual_price):
+    """
+    用「現在的實際股價」，回頭驗證一筆舊的預測紀錄。
+    這個函式只會「新增」驗證結果欄位，絕對不會修改原始預測數字（bull_low等）。
+
+    record: list_predictions() 讀回來的一筆紀錄（字典，包含 _filepath）
+    actual_price: 現在的實際股價
+
+    回傳：更新後的紀錄（同時也會把結果寫回原本的檔案）
+    """
+
+    original_price = record.get("current_price_at_prediction")
+
+    # 計算報酬率：(現在價格 - 當初價格) / 當初價格 * 100
+    if original_price:
+        actual_return_pct = round((actual_price - original_price) / original_price * 100, 2)
+    else:
+        actual_return_pct = None
+
+    which_scenario = classify_scenario(actual_price, record)
+
+    # 更新這筆紀錄的驗證欄位（只動這幾個欄位，其他原始預測資料完全不碰）
+    record["outcome_checked"] = True
+    record["actual_price_at_check"] = actual_price
+    record["actual_return_pct"] = actual_return_pct
+    record["which_scenario_occurred"] = which_scenario
+    record["checked_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+    # 把更新後的紀錄寫回原本的檔案
+    filepath = record["_filepath"]
+    # 存檔前先把 _filepath 這個「輔助用」欄位移除，因為它不該被存進 JSON 檔案本身
+    record_to_save = {k: v for k, v in record.items() if k != "_filepath"}
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(record_to_save, f, ensure_ascii=False, indent=2)
+
+    return record

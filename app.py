@@ -5,7 +5,7 @@
 import streamlit as st
 from src.stock_data import get_daily_stock_data, clean_stock_data, get_news_sentiment, get_company_overview
 from src.ai_analysis import generate_report, extract_structured_data
-from src.prediction_tracker import save_prediction
+from src.prediction_tracker import save_prediction, list_predictions, check_prediction_outcome
 import time
 
 st.set_page_config(page_title="AI 股票研究助理", page_icon="📈")
@@ -91,3 +91,45 @@ if st.button("開始分析"):
                     st.json(structured)
                 else:
                     st.warning("這次未能成功解析出結構化數據，AI 回傳格式可能不符預期。")
+
+st.markdown("---")
+st.header("📊 歷史預測回顧")
+st.caption("查看過去存下的預測紀錄，並比對現在的實際股價是否落在當初推估的區間內。")
+
+all_predictions = list_predictions()
+
+if not all_predictions:
+    st.write("目前還沒有任何預測紀錄。")
+else:
+    # 用「股票代號 + 時間」組成選單選項，方便使用者辨識
+    options = [f"{r['ticker']} — {r['timestamp']}" for r in all_predictions]
+    selected_index = st.selectbox("選擇一筆歷史預測", range(len(options)), format_func=lambda i: options[i])
+
+    selected_record = all_predictions[selected_index]
+
+    st.write(f"**股票代號：** {selected_record['ticker']}")
+    st.write(f"**預測時間：** {selected_record['timestamp']}")
+    st.write(f"**當時股價：** ${selected_record.get('current_price_at_prediction')}")
+    st.write(f"**Bull 區間：** {selected_record.get('bull_low')} ~ {selected_record.get('bull_high')}")
+    st.write(f"**Base 區間：** {selected_record.get('base_low')} ~ {selected_record.get('base_high')}")
+    st.write(f"**Bear 區間：** {selected_record.get('bear_low')} ~ {selected_record.get('bear_high')}")
+
+    if selected_record.get("outcome_checked"):
+        st.success("✅ 這筆預測已經驗證過結果")
+        st.write(f"**驗證時間：** {selected_record.get('checked_at')}")
+        st.write(f"**當時查詢到的實際股價：** ${selected_record.get('actual_price_at_check')}")
+        st.write(f"**實際報酬率：** {selected_record.get('actual_return_pct')}%")
+        st.write(f"**落在哪個情境：** {selected_record.get('which_scenario_occurred')}")
+    else:
+        st.info("這筆預測尚未驗證結果")
+        if st.button("🔍 查詢目前股價並驗證這筆預測"):
+            with st.spinner("正在查詢目前股價..."):
+                raw = get_daily_stock_data(selected_record["ticker"])
+                if "Time Series (Daily)" in raw:
+                    latest_df = clean_stock_data(raw)
+                    actual_price = latest_df["close"].iloc[-1]
+                    updated = check_prediction_outcome(selected_record, actual_price)
+                    st.success(f"驗證完成！目前股價：${actual_price}，落在：{updated['which_scenario_occurred']}")
+                    st.rerun()
+                else:
+                    st.error("查詢目前股價失敗，請稍後再試。")
