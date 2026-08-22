@@ -5,6 +5,7 @@ import os
 import requests
 import pandas as pd
 from dotenv import load_dotenv
+from src.cache_utils import save_to_cache, load_from_cache
 
 load_dotenv()
 api_key = os.getenv("ALPHAVANTAGE_API_KEY")
@@ -13,9 +14,20 @@ api_key = os.getenv("ALPHAVANTAGE_API_KEY")
 def get_daily_stock_data(symbol):
     """
     向 Alpha Vantage 要某支股票的每日歷史價格資料。
+    優先使用快取，快取不存在或過期時才真正呼叫 API。
+
     symbol: 股票代號，例如 "BTDR"
     回傳：API 回應的原始資料（Python 字典格式）
     """
+
+    cache_key = f"{symbol}_daily_price"
+
+    # 股價一天只會確定一次收盤價，快取設定 20 小時內有效，足夠涵蓋一整個交易日
+    cached_data = load_from_cache(cache_key, max_age_hours=20)
+    if cached_data is not None:
+        return cached_data
+
+    # 快取不存在或已過期，才真正呼叫 API
     url = "https://www.alphavantage.co/query"
     params = {
         "function": "TIME_SERIES_DAILY",
@@ -24,6 +36,12 @@ def get_daily_stock_data(symbol):
     }
     response = requests.get(url, params=params)
     data = response.json()
+
+    # 只有在成功拿到真正的股價資料時，才存進快取
+    # 避免把「額度用完」這種錯誤訊息也快取起來，之後一直讀到錯誤內容
+    if "Time Series (Daily)" in data:
+        save_to_cache(cache_key, data)
+
     return data
 
 
