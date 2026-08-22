@@ -5,6 +5,7 @@
 import streamlit as st
 from src.stock_data import get_daily_stock_data, clean_stock_data, get_news_sentiment, get_company_overview
 from src.ai_analysis import generate_report, extract_structured_data
+from src.prediction_tracker import save_prediction
 import time
 
 st.set_page_config(page_title="AI 股票研究助理", page_icon="📈")
@@ -49,6 +50,10 @@ if st.button("開始分析"):
             with st.spinner("正在整理結構化數據..."):
                 current_price = df["close"].iloc[-1]
                 structured = extract_structured_data(symbol, current_price, report)
+
+            # 把這次的分析結果存成永久紀錄，供未來追蹤預測準確度使用
+            saved_path = save_prediction(symbol, current_price, structured, report)
+            st.info(f"📁 這次的預測已存檔：{saved_path}")
 
             st.markdown("---")
 
