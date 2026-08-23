@@ -221,6 +221,77 @@ def calculate_buy_and_hold(df, initial_capital=10000):
         "end_price": last_price
     }
 
+def calculate_performance_metrics(trades, initial_capital, final_value, df):
+    """
+    根據交易紀錄，計算完整的績效指標。
+
+    trades: run_backtest_v1() 產生的交易紀錄清單
+    initial_capital: 起始本金
+    final_value: 最終價值
+    df: 原始股價 DataFrame，用來取得回測的起訖日期（計算年化報酬需要知道經過了幾年）
+
+    回傳：一個包含各項績效指標的字典
+    """
+
+    # ---------- CAGR（年化複合報酬率）----------
+    start_date = pd.to_datetime(df["date"].iloc[0])
+    end_date = pd.to_datetime(df["date"].iloc[-1])
+    years = (end_date - start_date).days / 365.25
+
+    if years > 0 and initial_capital > 0:
+        cagr_pct = round((((final_value / initial_capital) ** (1 / years)) - 1) * 100, 2)
+    else:
+        cagr_pct = None
+
+    # ---------- 把交易紀錄整理成「一買一賣配對」的完整交易，才能算勝率等指標 ----------
+    completed_trades = []
+    buy_trade = None
+
+    for trade in trades:
+        if trade["action"] == "buy":
+            buy_trade = trade
+        elif trade["action"] == "sell" and buy_trade is not None:
+            trade_return_pct = (trade["execution_price"] - buy_trade["execution_price"]) / buy_trade["execution_price"] * 100
+            completed_trades.append({
+                "entry_date": buy_trade["date"],
+                "entry_price": buy_trade["execution_price"],
+                "exit_date": trade["date"],
+                "exit_price": trade["execution_price"],
+                "return_pct": round(trade_return_pct, 2)
+            })
+            buy_trade = None
+
+    # ---------- 勝率、平均獲利、平均虧損、獲利因子 ----------
+    if completed_trades:
+        winning_trades = [t for t in completed_trades if t["return_pct"] > 0]
+        losing_trades = [t for t in completed_trades if t["return_pct"] <= 0]
+
+        win_rate_pct = round(len(winning_trades) / len(completed_trades) * 100, 2)
+
+        avg_win_pct = round(sum(t["return_pct"] for t in winning_trades) / len(winning_trades), 2) if winning_trades else 0
+        avg_loss_pct = round(sum(t["return_pct"] for t in losing_trades) / len(losing_trades), 2) if losing_trades else 0
+
+        total_gains = sum(t["return_pct"] for t in winning_trades)
+        total_losses = abs(sum(t["return_pct"] for t in losing_trades))
+        # 獲利因子 = 總獲利 / 總虧損，大於1代表整體是賺錢的，數字越大代表賺賠比越好
+        profit_factor = round(total_gains / total_losses, 2) if total_losses > 0 else None
+    else:
+        win_rate_pct = None
+        avg_win_pct = None
+        avg_loss_pct = None
+        profit_factor = None
+
+    return {
+        "cagr_pct": cagr_pct,
+        "years_covered": round(years, 2),
+        "win_rate_pct": win_rate_pct,
+        "avg_win_pct": avg_win_pct,
+        "avg_loss_pct": avg_loss_pct,
+        "profit_factor": profit_factor,
+        "number_of_completed_trades": len(completed_trades),
+        "completed_trades": completed_trades
+    }
+
 if __name__ == "__main__":
     from src.stock_data import get_long_history_stock_data, get_crypto_daily_data, clean_crypto_data
 
@@ -267,3 +338,18 @@ if __name__ == "__main__":
         print("結論：Strategy V1 表現優於 Buy & Hold")
     else:
         print("結論：Strategy V1 表現劣於 Buy & Hold")
+
+    print("\n===== 完整績效指標 =====")
+    metrics = calculate_performance_metrics(
+        backtest_result["trades"],
+        backtest_result["initial_capital"],
+        backtest_result["final_value"],
+        stock_df
+    )
+    print(f"回測涵蓋年數：{metrics['years_covered']} 年")
+    print(f"CAGR（年化報酬率）：{metrics['cagr_pct']}%")
+    print(f"完整交易次數：{metrics['number_of_completed_trades']}")
+    print(f"勝率：{metrics['win_rate_pct']}%")
+    print(f"平均獲利：{metrics['avg_win_pct']}%")
+    print(f"平均虧損：{metrics['avg_loss_pct']}%")
+    print(f"獲利因子：{metrics['profit_factor']}")
