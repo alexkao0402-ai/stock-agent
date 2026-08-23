@@ -71,6 +71,53 @@ def add_relative_strength(stock_df, benchmark_df, months=6, trading_days_per_mon
 
     return df
 
+def add_entry_exit_signals(df):
+    """
+    根據三因子條件，產生進場/出場訊號，並標記「實際執行交易的價格」。
+    重要：訊號在第t天算出，但實際成交價使用第t+1天（隔天）的開盤價，避免look-ahead bias。
+
+    df: 已經跑過 add_trend_filter(), add_momentum(), add_relative_strength() 的 DataFrame
+
+    回傳：新增了 signal, execution_price 欄位的 DataFrame
+    signal 欄位的值："buy" / "sell" / None
+    execution_price：這個訊號實際會用哪一天、哪個價格成交（如果是最後一天發出訊號、沒有隔天資料可用，則為 None）
+    """
+    df = df.copy()
+
+    # 進場條件：三個條件同時成立
+    entry_condition = (
+        df["is_bullish_regime"] == True
+    ) & (
+        df["momentum_pct"] > 0
+    ) & (
+        df["outperforms_benchmark"] == True
+    )
+
+    # 出場條件：只要「不在多頭趨勢」或「不再贏過基準」，任一成立就出場
+    exit_condition = (
+        df["is_bullish_regime"] == False
+    ) | (
+        df["outperforms_benchmark"] == False
+    )
+
+    # 用「今天符合條件、昨天不符合」來判斷「訊號第一次成立」，避免同一個持續成立的狀態每天都重複發訊號
+    entry_condition_yesterday = entry_condition.shift(1)
+    exit_condition_yesterday = exit_condition.shift(1)
+
+    new_buy_signal = (entry_condition == True) & (entry_condition_yesterday == False)
+    new_sell_signal = (exit_condition == True) & (exit_condition_yesterday == False)
+
+    df["signal"] = None
+    df.loc[new_buy_signal, "signal"] = "buy"
+    df.loc[new_sell_signal, "signal"] = "sell"
+
+    # 核心邏輯：把「隔天的開盤價」，對應回「今天這一列」
+    # .shift(-1) 代表「把整欄資料往上移一格」，這樣「今天這一列」對應到的，就是「明天的值」
+    # 這樣一來，df.loc[某一天, "execution_price"] 存的就是「這個訊號真正會拿去成交的價格」
+    df["execution_price"] = df["open"].shift(-1)
+
+    return df
+
 if __name__ == "__main__":
     from src.stock_data import get_long_history_stock_data, get_crypto_daily_data, clean_crypto_data
 
@@ -90,3 +137,9 @@ if __name__ == "__main__":
 
     print("\n最後15天的三因子數據：")
     print(stock_df[["date", "close", "ma200", "is_bullish_regime", "momentum_pct", "benchmark_momentum_pct", "outperforms_benchmark"]].tail(15))
+
+    stock_df = add_entry_exit_signals(stock_df)
+
+    print("\n所有觸發過的訊號：")
+    signal_rows = stock_df[stock_df["signal"].notna()]
+    print(signal_rows[["date", "close", "signal", "execution_price"]])
