@@ -116,6 +116,56 @@ def run_ablation_study(symbol="BTDR", period="2y"):
 
     return results
 
+def test_multiple_assets(symbols, period="2y"):
+    """
+    用完全相同、未經調整的 Strategy V1，測試多個資產，觀察策略在不同資產上的表現差異。
+    不針對任何個別資產優化參數。
+
+    symbols: 股票代號清單，例如 ["SPY", "QQQ", "AAPL"]
+    period: 抓取的歷史長度
+
+    回傳：一個字典，key是股票代號，value是該資產的完整回測結果
+    """
+
+    raw_crypto = get_crypto_daily_data("BTC", "USD")
+    crypto_df = clean_crypto_data(raw_crypto)
+
+    results = {}
+
+    for symbol in symbols:
+        try:
+            stock_df = get_long_history_stock_data(symbol, period=period)
+
+            if stock_df.empty or len(stock_df) < 200:
+                results[symbol] = {"error": "資料不足200天，無法計算MA200"}
+                continue
+
+            df = add_trend_filter(stock_df)
+            df = add_momentum(df)
+            df = add_relative_strength(df, crypto_df)
+            df = add_entry_exit_signals_custom(df, use_momentum=True, use_relative_strength=True)
+
+            backtest_result = run_backtest_v1(df)
+            bh_result = calculate_buy_and_hold(df)
+            metrics = calculate_performance_metrics(
+                backtest_result["trades"], backtest_result["initial_capital"],
+                backtest_result["final_value"], df
+            )
+
+            results[symbol] = {
+                "strategy_return_pct": backtest_result["total_return_pct"],
+                "buy_hold_return_pct": bh_result["total_return_pct"],
+                "outperformed_bh": backtest_result["total_return_pct"] > bh_result["total_return_pct"],
+                "number_of_trades": metrics["number_of_completed_trades"],
+                "win_rate_pct": metrics["win_rate_pct"],
+                "cagr_pct": metrics["cagr_pct"]
+            }
+        except Exception as e:
+            # 如果某支股票抓取或計算過程中出錯（例如代號不存在），記錄錯誤但不中斷整個測試
+            results[symbol] = {"error": str(e)}
+
+    return results
+
 
 if __name__ == "__main__":
     results = run_ablation_study("BTDR")
@@ -125,3 +175,15 @@ if __name__ == "__main__":
     for key, r in results.items():
         win_rate = r.get("win_rate_pct", "N/A")
         print(f"{key:<15}{r['description']:<45}{r['total_return_pct']:<12}{r['number_of_trades']:<10}{win_rate}")
+
+    print("\n\n===== Step F: 多資產測試（未調整任何參數）=====\n")
+    assets = ["SPY", "QQQ", "AAPL", "NVDA", "MARA", "IREN"]
+    multi_results = test_multiple_assets(assets)
+
+    print(f"{'股票':<8}{'策略報酬率':<14}{'B&H報酬率':<14}{'策略是否勝出':<14}{'交易次數':<10}{'勝率':<10}{'CAGR'}")
+    print("-" * 90)
+    for symbol, r in multi_results.items():
+        if "error" in r:
+            print(f"{symbol:<8}錯誤：{r['error']}")
+        else:
+            print(f"{symbol:<8}{r['strategy_return_pct']:<14}{r['buy_hold_return_pct']:<14}{str(r['outperformed_bh']):<14}{r['number_of_trades']:<10}{r['win_rate_pct']:<10}{r['cagr_pct']}")
