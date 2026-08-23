@@ -4,6 +4,7 @@
 import os
 import requests
 import pandas as pd
+import yfinance as yf
 from dotenv import load_dotenv
 from src.cache_utils import save_to_cache, load_from_cache
 
@@ -193,6 +194,48 @@ def get_crypto_daily_data(symbol="BTC", market="USD"):
         save_to_cache(cache_key, data)
 
     return data
+
+def get_long_history_stock_data(symbol, period="2y"):
+    """
+    用 yfinance 抓取某支股票的長期歷史股價資料（免費，不受 Alpha Vantage 額度限制）。
+    這是專門給需要長歷史資料的功能使用（例如 Strategy V1 的 MA200 計算）。
+
+    symbol: 股票代號，例如 "BTDR"
+    period: 要抓多長的歷史，例如 "2y"（2年）、"5y"（5年）、"max"（全部歷史）
+
+    回傳：一個 pandas DataFrame，欄位為 date, open, high, low, close, volume
+    """
+
+    cache_key = f"{symbol}_long_history_{period}"
+
+    cached_data = load_from_cache(cache_key, max_age_hours=20)
+    if cached_data is not None:
+        # 快取存的是「已經處理成list的資料」，讀回來要轉換回 DataFrame
+        return pd.DataFrame(cached_data)
+
+    raw_df = yf.download(symbol, period=period, progress=False)
+
+    if raw_df.empty:
+        return pd.DataFrame()
+
+    # yfinance 回傳的表格有多層欄位(MultiIndex)，我們把它壓平成單層，方便後續處理
+    raw_df.columns = raw_df.columns.get_level_values(0)
+
+    # 整理成我們習慣的欄位名稱與順序
+    df = raw_df[["Open", "High", "Low", "Close", "Volume"]].copy()
+    df.columns = ["open", "high", "low", "close", "volume"]
+
+    # 目前日期是index，把它變成一個獨立欄位，並轉換成文字格式（方便存進JSON快取、也方便跟其他資料比對）
+    df.index.name = "date"
+    df = df.reset_index()
+    df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+
+    df = df.sort_values("date").reset_index(drop=True)
+
+    # 存進快取前，要先把 DataFrame 轉換成list of dict這種能被存成JSON的格式
+    save_to_cache(cache_key, df.to_dict(orient="records"))
+
+    return df
 
 if __name__ == "__main__":
     raw = get_daily_stock_data("BTDR")

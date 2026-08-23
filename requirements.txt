@@ -3,3 +3,4 @@ requests
 python-dotenv
 anthropic
 streamlit
+yfinance
