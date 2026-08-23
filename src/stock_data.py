@@ -70,10 +70,20 @@ def clean_stock_data(raw_data):
 def get_news_sentiment(symbol, limit=20):
     """
     向 Alpha Vantage 要某支股票最近的相關新聞，附帶情緒分析分數。
+    優先使用快取，快取不存在或過期時才真正呼叫 API。
+
     symbol: 股票代號，例如 "BTDR"
     limit: 最多抓幾則新聞，預設 20 則
     回傳：一個 list，每一項是一則新聞的重點資訊（字典格式）
     """
+
+    cache_key = f"{symbol}_news"
+
+    # 新聞變化比股價快，快取設定4小時內有效
+    cached_data = load_from_cache(cache_key, max_age_hours=4)
+    if cached_data is not None:
+        return cached_data
+
     url = "https://www.alphavantage.co/query"
     params = {
         "function": "NEWS_SENTIMENT",
@@ -97,15 +107,29 @@ def get_news_sentiment(symbol, limit=20):
             "source": item.get("source")
         })
 
+    # 只有成功整理出新聞清單時才存進快取
+    if news_list:
+        save_to_cache(cache_key, news_list)
+
     return news_list
 
 
 def get_company_overview(symbol):
     """
     向 Alpha Vantage 要某支股票的公司基本面總覽資料。
+    優先使用快取，快取不存在或過期時才真正呼叫 API。
+
     symbol: 股票代號，例如 "BTDR"
     回傳：一個字典，包含市值、本益比、營收等重要指標
     """
+
+    cache_key = f"{symbol}_overview"
+
+    # 基本面資料通常一季才更新一次，快取設定72小時（3天）內有效
+    cached_data = load_from_cache(cache_key, max_age_hours=72)
+    if cached_data is not None:
+        return cached_data
+
     url = "https://www.alphavantage.co/query"
     params = {
         "function": "OVERVIEW",
@@ -132,6 +156,9 @@ def get_company_overview(symbol):
         "52週最低價": data.get("52WeekLow"),
         "公司簡介": data.get("Description")
     }
+
+    # 只有成功拿到有效資料時才存進快取
+    save_to_cache(cache_key, overview)
 
     return overview
 
