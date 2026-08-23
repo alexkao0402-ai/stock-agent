@@ -72,16 +72,12 @@ def add_relative_strength(stock_df, benchmark_df, months=6, trading_days_per_mon
     return df
 
 if __name__ == "__main__":
-    from src.stock_data import (
-        get_daily_stock_data, clean_stock_data,
-        get_crypto_daily_data, clean_crypto_data
-    )
+    from src.stock_data import get_long_history_stock_data, get_crypto_daily_data, clean_crypto_data
 
-    # 抓取BTDR的完整歷史股價（用 full，確保有足夠天數算 MA200）
-    raw_stock = get_daily_stock_data("BTDR", outputsize="full")
-    stock_df = clean_stock_data(raw_stock)
+    # 改用 yfinance 抓取BTDR的長期歷史股價（2年，足夠算 MA200）
+    stock_df = get_long_history_stock_data("BTDR", period="2y")
 
-    # 抓取BTC的完整歷史價格
+    # BTC 資料維持用 Alpha Vantage（這個資料源本身就給完整歷史，不受影響）
     raw_crypto = get_crypto_daily_data("BTC", "USD")
     crypto_df = clean_crypto_data(raw_crypto)
 
