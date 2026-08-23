@@ -118,6 +118,83 @@ def add_entry_exit_signals(df):
 
     return df
 
+def run_backtest_v1(df, initial_capital=10000, transaction_cost_pct=0.001, slippage_pct=0.0005):
+    """
+    模擬照著 Strategy V1 的訊號進行買賣，並且扣除交易成本與滑價，計算真實績效。
+
+    df: 已經跑過 add_entry_exit_signals() 的 DataFrame
+    initial_capital: 起始模擬本金，預設 10000
+    transaction_cost_pct: 每筆交易的手續費比例，預設 0.1%（0.001）
+    slippage_pct: 每筆交易的滑價比例，預設 0.05%（0.0005）
+                  滑價代表「實際成交價，通常會比你想要的價格差一點點」，這是真實交易中常見的現象
+
+    回傳：一個字典，包含完整交易紀錄與績效指標
+    """
+
+    cash = initial_capital
+    shares = 0
+    trades = []
+
+    for _, row in df.iterrows():
+        # 如果這一天沒有 execution_price（例如是資料的最後一天，沒有隔天可以成交），就跳過
+        if pd.isna(row["execution_price"]):
+            continue
+
+        if row["signal"] == "buy" and cash > 0:
+            raw_price = row["execution_price"]
+            # 買進時，滑價讓你「買貴一點」（用比預期價格更高的價格成交，模擬真實市場的不利影響）
+            actual_price = raw_price * (1 + slippage_pct)
+
+            # 先扣除手續費，剩下的錢才拿去買股票
+            cash_after_fee = cash * (1 - transaction_cost_pct)
+            shares = cash_after_fee / actual_price
+            cash = 0
+
+            trades.append({
+                "date": row["date"],
+                "action": "buy",
+                "signal_date": row["date"],
+                "execution_price": actual_price,
+                "shares": shares,
+                "reason": "三因子條件成立：趨勢多頭 + 正動能 + 優於BTC"
+            })
+
+        elif row["signal"] == "sell" and shares > 0:
+            raw_price = row["execution_price"]
+            # 賣出時，滑價讓你「賣便宜一點」（同樣模擬不利影響）
+            actual_price = raw_price * (1 - slippage_pct)
+
+            gross_cash = shares * actual_price
+            # 賣出所得，也要扣一次手續費
+            cash = gross_cash * (1 - transaction_cost_pct)
+
+            trades.append({
+                "date": row["date"],
+                "action": "sell",
+                "signal_date": row["date"],
+                "execution_price": actual_price,
+                "shares": shares,
+                "reason": "趨勢轉空頭 或 不再優於BTC"
+            })
+            shares = 0
+
+    final_price = df["close"].iloc[-1]
+    final_value = cash + (shares * final_price)
+    total_return_pct = round((final_value - initial_capital) / initial_capital * 100, 2)
+
+    result = {
+        "initial_capital": initial_capital,
+        "final_value": round(final_value, 2),
+        "total_return_pct": total_return_pct,
+        "number_of_trades": len(trades),
+        "transaction_cost_pct": transaction_cost_pct,
+        "slippage_pct": slippage_pct,
+        "trades": trades,
+        "still_holding_shares": shares > 0
+    }
+
+    return result
+
 if __name__ == "__main__":
     from src.stock_data import get_long_history_stock_data, get_crypto_daily_data, clean_crypto_data
 
@@ -143,3 +220,11 @@ if __name__ == "__main__":
     print("\n所有觸發過的訊號：")
     signal_rows = stock_df[stock_df["signal"].notna()]
     print(signal_rows[["date", "close", "signal", "execution_price"]])
+
+    print("\n===== Strategy V1 回測結果（含交易成本與滑價）=====")
+    backtest_result = run_backtest_v1(stock_df)
+    print(f"本金：${backtest_result['initial_capital']}")
+    print(f"最終價值：${backtest_result['final_value']}")
+    print(f"總報酬率：{backtest_result['total_return_pct']}%")
+    print(f"交易次數：{backtest_result['number_of_trades']}")
+    print(f"手續費率：{backtest_result['transaction_cost_pct']*100}%，滑價率：{backtest_result['slippage_pct']*100}%")
