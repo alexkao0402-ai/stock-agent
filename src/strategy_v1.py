@@ -195,6 +195,32 @@ def run_backtest_v1(df, initial_capital=10000, transaction_cost_pct=0.001, slipp
 
     return result
 
+def calculate_buy_and_hold(df, initial_capital=10000):
+    """
+    計算「從資料第一天就買進，一路持有到最後一天」的績效，作為比較基準。
+
+    df: 股價 DataFrame（必須包含 close 欄位，按日期排序）
+    initial_capital: 起始模擬本金，預設 10000
+
+    回傳：一個字典，包含最終價值與總報酬率
+    """
+    first_price = df["close"].iloc[0]
+    last_price = df["close"].iloc[-1]
+
+    shares = initial_capital / first_price
+    final_value = shares * last_price
+    total_return_pct = round((final_value - initial_capital) / initial_capital * 100, 2)
+
+    return {
+        "initial_capital": initial_capital,
+        "final_value": round(final_value, 2),
+        "total_return_pct": total_return_pct,
+        "start_date": df["date"].iloc[0],
+        "end_date": df["date"].iloc[-1],
+        "start_price": first_price,
+        "end_price": last_price
+    }
+
 if __name__ == "__main__":
     from src.stock_data import get_long_history_stock_data, get_crypto_daily_data, clean_crypto_data
 
@@ -228,3 +254,16 @@ if __name__ == "__main__":
     print(f"總報酬率：{backtest_result['total_return_pct']}%")
     print(f"交易次數：{backtest_result['number_of_trades']}")
     print(f"手續費率：{backtest_result['transaction_cost_pct']*100}%，滑價率：{backtest_result['slippage_pct']*100}%")
+
+    print("\n===== Buy & Hold 基準比較 =====")
+    bh_result = calculate_buy_and_hold(stock_df)
+    print(f"從 {bh_result['start_date']}（${bh_result['start_price']}）持有到 {bh_result['end_date']}（${bh_result['end_price']}）")
+    print(f"Buy & Hold 最終價值：${bh_result['final_value']}")
+    print(f"Buy & Hold 總報酬率：{bh_result['total_return_pct']}%")
+
+    print(f"\nStrategy V1 總報酬率：{backtest_result['total_return_pct']}%")
+    print(f"Buy & Hold 總報酬率：{bh_result['total_return_pct']}%")
+    if backtest_result['total_return_pct'] > bh_result['total_return_pct']:
+        print("結論：Strategy V1 表現優於 Buy & Hold")
+    else:
+        print("結論：Strategy V1 表現劣於 Buy & Hold")
