@@ -7,6 +7,12 @@ from src.stock_data import get_daily_stock_data, clean_stock_data, get_news_sent
 from src.ai_analysis import generate_report, extract_structured_data
 from src.prediction_tracker import save_prediction, list_predictions, check_prediction_outcome
 from src.strategy import add_moving_averages, add_signals, run_backtest
+from src.stock_data import get_long_history_stock_data
+from src.strategy_v1 import (
+    add_trend_filter, add_momentum, add_relative_strength,
+    add_entry_exit_signals, run_backtest_v1,
+    calculate_buy_and_hold, calculate_performance_metrics
+)
 import time
 
 
@@ -59,8 +65,8 @@ if st.button("開始分析"):
 
             st.markdown("---")
 
-            # 建立六個分頁
-            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📄 AI 研究報告", "📈 原始股價資料", "📰 新聞列表", "🏢 公司基本面", "🔢 結構化數據", "📉 均線策略回測"])
+            # 建立七個分頁
+            tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📄 AI 研究報告", "📈 原始股價資料", "📰 新聞列表", "🏢 公司基本面", "🔢 結構化數據", "📉 均線策略回測", "🎯 Strategy V1"])
             with tab1:
                 chart_data = df.set_index("date")[["close"]]
                 st.line_chart(chart_data)
@@ -121,6 +127,54 @@ if st.button("開始分析"):
                 col3.metric("交易次數", backtest_result['number_of_trades'])
 
                 st.caption("⚠️ 此回測結果僅反映過去這段期間的表現，不代表未來績效，且未考慮手續費與滑點。")
+
+            with tab7:
+                st.caption("Strategy V1：趨勢過濾(MA200) + 6個月動能 + 相對BTC強弱，三條件同時成立才進場。含交易成本、滑價，並與Buy & Hold比較。")
+
+                with st.spinner("正在抓取長期歷史資料並執行回測（約需20-30秒）..."):
+                    v1_stock_df = get_long_history_stock_data(symbol, period="2y")
+
+                    if v1_stock_df.empty or len(v1_stock_df) < 200:
+                        st.warning("這支股票的歷史資料不足200天，無法計算MA200，暫時無法執行Strategy V1回測。")
+                    else:
+                        from src.stock_data import get_crypto_daily_data, clean_crypto_data
+                        raw_crypto = get_crypto_daily_data("BTC", "USD")
+                        crypto_df = clean_crypto_data(raw_crypto)
+
+                        v1_stock_df = add_trend_filter(v1_stock_df)
+                        v1_stock_df = add_momentum(v1_stock_df)
+                        v1_stock_df = add_relative_strength(v1_stock_df, crypto_df)
+                        v1_stock_df = add_entry_exit_signals(v1_stock_df)
+
+                        v1_result = run_backtest_v1(v1_stock_df)
+                        bh_result = calculate_buy_and_hold(v1_stock_df)
+                        v1_metrics = calculate_performance_metrics(
+                            v1_result["trades"], v1_result["initial_capital"],
+                            v1_result["final_value"], v1_stock_df
+                        )
+
+                        # 圖表：收盤價 + MA200
+                        chart_df = v1_stock_df.set_index("date")[["close", "ma200"]]
+                        st.line_chart(chart_df)
+
+                        st.subheader("Strategy V1 vs Buy & Hold")
+                        col1, col2 = st.columns(2)
+                        col1.metric("Strategy V1 總報酬率", f"{v1_result['total_return_pct']}%")
+                        col2.metric("Buy & Hold 總報酬率", f"{bh_result['total_return_pct']}%")
+
+                        st.subheader("完整績效指標")
+                        col3, col4, col5, col6 = st.columns(4)
+                        col3.metric("CAGR", f"{v1_metrics['cagr_pct']}%")
+                        col4.metric("勝率", f"{v1_metrics['win_rate_pct']}%")
+                        col5.metric("交易次數", v1_metrics['number_of_completed_trades'])
+                        col6.metric("獲利因子", v1_metrics['profit_factor'])
+
+                        if v1_metrics["completed_trades"]:
+                            st.subheader("交易紀錄")
+                            trades_df = pd.DataFrame(v1_metrics["completed_trades"])
+                            st.dataframe(trades_df, use_container_width=True)
+
+                        st.caption("⚠️ 此為規則型策略回測，完全不使用AI判斷。過去表現不代表未來績效，且此策略在特定股票上可能表現不佳，這是正常且重要的研究發現，不代表系統有誤。")
 
 st.markdown("---")
 st.header("📊 歷史預測回顧")
