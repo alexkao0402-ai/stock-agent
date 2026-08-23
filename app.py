@@ -2,6 +2,7 @@
 # 這是 Streamlit 網頁版的入口
 # 這一步：加入公司基本面資料，串接完整的分析流程
 
+import pandas as pd
 import streamlit as st
 from src.stock_data import get_daily_stock_data, clean_stock_data, get_news_sentiment, get_company_overview
 from src.ai_analysis import generate_report, extract_structured_data
@@ -157,6 +158,12 @@ if st.button("開始分析"):
                         chart_df = v1_stock_df.set_index("date")[["close", "ma200"]]
                         st.line_chart(chart_df)
 
+                        # 用表格清楚標示每一次買賣訊號發生的日期與價格，方便對照上面的走勢圖
+                        signal_points = v1_stock_df[v1_stock_df["signal"].notna()][["date", "close", "signal", "execution_price"]]
+                        if len(signal_points) > 0:
+                            st.caption("訊號點位（訊號當天收盤價 vs 隔天實際成交價）：")
+                            st.dataframe(signal_points, use_container_width=True)
+
                         st.subheader("Strategy V1 vs Buy & Hold")
                         col1, col2 = st.columns(2)
                         col1.metric("Strategy V1 總報酬率", f"{v1_result['total_return_pct']}%")
@@ -170,9 +177,13 @@ if st.button("開始分析"):
                         col6.metric("獲利因子", v1_metrics['profit_factor'])
 
                         if v1_metrics["completed_trades"]:
-                            st.subheader("交易紀錄")
-                            trades_df = pd.DataFrame(v1_metrics["completed_trades"])
-                            st.dataframe(trades_df, use_container_width=True)
+                            st.subheader("交易診斷報告（含最大有利/不利偏移）")
+                            st.caption("MFE = 持有期間股價曾漲到的最高點（相對進場價）；MAE = 持有期間股價曾跌到的最低點（相對進場價）。若MFE遠高於最終報酬，代表出場時機可能太晚。")
+
+                            from src.strategy_v1 import build_trade_diagnostics
+                            diagnostics = build_trade_diagnostics(v1_stock_df, v1_metrics["completed_trades"])
+                            diag_df = pd.DataFrame(diagnostics)
+                            st.dataframe(diag_df, use_container_width=True)
 
                         st.caption("⚠️ 此為規則型策略回測，完全不使用AI判斷。過去表現不代表未來績效，且此策略在特定股票上可能表現不佳，這是正常且重要的研究發現，不代表系統有誤。")
 

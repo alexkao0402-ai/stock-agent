@@ -1,0 +1,355 @@
+{
+  "cached_at": "2026-08-23T15:18:38.654245",
+  "data": [
+    {
+      "title": "Jim Cramer Was Left Impressed By Microsoft Corporation (NASDAQ:MSFT)’s Conference Call",
+      "time_published": "20260823T000900",
+      "summary": "Jim Cramer expressed significant impresssion with Microsoft's recent conference call, highlighting its impact on investor sentiment regarding the company's AI and cloud computing initiatives. Microsoft's shares have seen a substantial turnaround in 2026 due to strong fiscal fourth-quarter earnings, particularly the 43% jump in Azure cloud computing revenue. The article contrasts Microsoft's performance with Meta Platforms, Inc. (NASDAQ:META), which faces challenges with its AI spending and a significant drop in free cash flow despite strong advertising revenue.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "Yahoo Finance Singapore"
+    },
+    {
+      "title": "YouTube paying to keep creators amid Netflix push",
+      "time_published": "20260822T160902",
+      "summary": "YouTube is reportedly offering lucrative deals, including direct financing and brand deal allocations, to popular creators to secure exclusive content. This move aims to counter Netflix's aggressive recruitment of top YouTubers, which has intensified competition between the two streaming giants. YouTube has indicated that creators who also post on Netflix may face consequences such as reduced marketing support and exclusion from certain brand campaigns.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Taipei Times"
+    },
+    {
+      "title": "Will utility bills rise from data centers? TVA’s rate change leaves public guessing",
+      "time_published": "20260822T091245",
+      "summary": "The Tennessee Valley Authority (TVA) has changed its electricity pricing for data centers but has not fully disclosed the financial modeling used to protect consumers from increased utility bills. This rate adjustment, which charges data centers about 10% more and adds a fee for loads over 5 megawatts, was approved by the TVA Board without questions. Environmental groups are concerned that while data centers should pay their fair share, the TVA's plans to expand fossil fuel infrastructure to meet their demand will lead to increased pollution and negative public health outcomes.",
+      "overall_sentiment_label": "Neutral",
+      "source": "WPLN News"
+    },
+    {
+      "title": "NVIDIA Corporation (NVDA) & Advanced Micro Devices (AMD): Nvidia Might Ship AI Chips With Less Memory. AMD Says It’s Not Worried",
+      "time_published": "20260821T210712",
+      "summary": "NVIDIA is reportedly considering shipping its next-generation Rubin Ultra GPU with less high-bandwidth memory than initially promised, potentially as low as 192GB to 256GB, due to a severe industry-wide memory shortage. Meanwhile, its rival Advanced Micro Devices (AMD) is proceeding with its Helios AI system, claiming to have secured sufficient memory through strong supplier relationships. This situation raises questions about Nvidia's supply chain management and AMD's increasing competitiveness in the AI chip market.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "Yahoo! Finance Canada"
+    },
+    {
+      "title": "NVIDIA Corporation (NVDA) & Advanced Micro Devices (AMD): Nvidia Might Ship AI Chips With Less Memory. AMD Says It’s Not Worried",
+      "time_published": "20260821T203708",
+      "summary": "Nvidia is reportedly considering shipping its next-generation Rubin Ultra GPU with less memory than initially promised, potentially as low as 192GB to 256GB, due to a severe industry-wide memory shortage. Meanwhile, its rival AMD is confident about its Helios AI system, which is set to ship with sufficient memory to major customers like Microsoft and Meta later this year. Despite Nvidia's potential memory downgrade, it still dominates the data center GPU market, while AMD aims to challenge this dominance with its Helios system and strong memory supplier relationships.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Yahoo Finance"
+    },
+    {
+      "title": "Advanced Micro Devices (AMD) Posts Record Sales, But Musk’s NVIDIA (NVDA) Pledge Sinks the Stock",
+      "time_published": "20260821T194849",
+      "summary": "Advanced Micro Devices (AMD) reported record sales and a healthy beat on earnings, with revenue up 50% year over year, yet its stock fell over 8%. This decline is attributed to Elon Musk's announcement that SpaceX will exclusively use NVIDIA (NVDA) chips moving forward, despite AMD's strong performance and new deals with major AI companies. The article highlights the significant impact of market sentiment on chip stocks, with NVIDIA gaining solely on Musk's comments while AMD's impressive fundamentals were overshadowed.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Yahoo Finance"
+    },
+    {
+      "title": "Bragar Eagel & Squire, P.C. is Investigating Hims & Hers",
+      "time_published": "20260821T184038",
+      "summary": "Bragar Eagel & Squire, P.C., a stockholder rights law firm, is investigating potential claims against Hims & Hers Health, Inc. following a lawsuit filed by the FTC and California/Utah. The lawsuit alleges that Hims & Hers failed to clearly disclose prescription charges, made it difficult for consumers to cancel subscriptions, and misled them about privacy by sharing health information with third parties. This news led to a 14.73% drop in Hims & Hers stock on July 29, 2026.",
+      "overall_sentiment_label": "Bearish",
+      "source": "GlobeNewswire"
+    },
+    {
+      "title": "Q32 Bio Sees Unusually Large Options Volume (NASDAQ:QTTB)",
+      "time_published": "20260821T151038",
+      "summary": "Q32 Bio (NASDAQ:QTTB) experienced an unusually high volume of call options traded, with 7,501 call options changing hands, marking a 790% increase from its typical daily volume. This surge in activity follows significant insider purchases, where Orbimed Advisors and Director Diyong Xu each acquired 1.875 million shares at $8 per share. Analysts maintain a \"Moderate Buy\" consensus rating with an average price target of $30, even as shares closed at $15.82.",
+      "overall_sentiment_label": "Neutral",
+      "source": "MarketBeat"
+    },
+    {
+      "title": "Anglogold Ashanti PLC Stock (AU) Moved Up by 5.57% on Aug 21: What Signal Does It Send?",
+      "time_published": "20260821T144137",
+      "summary": "AngloGold Ashanti PLC (AU) stock surged by 5.57% on August 21st, driven by strong macroeconomic tailwinds, rising gold prices, and robust company performance. The company reported strong quarterly earnings, significant free cash flow, and increased shareholder returns. Technical indicators suggest a \"buy\" signal, although some metrics also point to overbought conditions.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "TradingKey"
+    },
+    {
+      "title": "Truth Social is selling faster access to Trump posts. Is that legal?",
+      "time_published": "20260821T134214",
+      "summary": "Trump Media's new \"Truth API\" service offers paying clients expedited access to former President Trump's social media posts, including official announcements that could move markets, raising significant legal and ethical concerns. Critics argue this practice gives preferential access to critical government information, potentially violating the First and Fifth Amendments, and differs from other news services because the information originates directly from a former president who stands to profit. A federal lawsuit has been filed, and congressional Democrats are proposing legislation to block such pay-for-access schemes for government employees' communications.",
+      "overall_sentiment_label": "Somewhat-Bearish",
+      "source": "USA Today"
+    },
+    {
+      "title": "VeriSign (VRSN) Faces Legal Risk Narrative On Questions Of Whether The Stock Looks Pricey",
+      "time_published": "20260821T132850",
+      "summary": "VeriSign (VRSN) stock is currently trading at US$276.90, but a prevailing narrative from ValueInvestor_2026 suggests its fair value is around $165, implying it is significantly overvalued due to legal risks. The company, which holds a monopoly over .com and .net TLDs, faces potential class-action lawsuits that could jeopardize these lucrative contracts, leading to severe consequences. Investors are urged to consider these legal implications and test the underlying assumptions regarding concentrated revenue, assumed contract renewals, and governance shocks.",
+      "overall_sentiment_label": "Somewhat-Bearish",
+      "source": "Simply Wall Street"
+    },
+    {
+      "title": "Full Transcript: Virtuix Holdings Q1 2027 Earnings Call",
+      "time_published": "20260821T131303",
+      "summary": "Virtuix Holdings reported a 72% year-over-year increase in new Omni One system orders, with a 150% increase since its Meta collaboration. Despite a 26% decline in net sales due to prior-year backlog clearance, gross margin expanded to 30%. The company plans to accelerate consumer revenue, advance defense programs, pursue defense M&A, expand enterprise sales, and develop its healthcare vertical, aiming for profitability.",
+      "overall_sentiment_label": "Bullish",
+      "source": "Sahm"
+    },
+    {
+      "title": "Uber Faces €825 Million Dutch Fine Over Driver Suspensions",
+      "time_published": "20260821T112928",
+      "summary": "Uber has been fined €825 million by Dutch authorities for using automated systems to suspend driver accounts, marking the second-largest penalty under the EU's General Data Protection Regulation. The fine covers the period of 2020 to 2022, with authorities stating Uber violated drivers' right to be informed about automatic decision-making. Uber disagrees with the decision and disproportionate fine, stating they will appeal and that the practices in question were discontinued years ago.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Yahoo Finance"
+    },
+    {
+      "title": "Take-Two, Meta lead communication services growth rankings as telecom giants lag (XLC:NYSEARCA)",
+      "time_published": "20260821T110936",
+      "summary": "Take-Two Interactive Software (TTWO) and Meta Platforms (META) are leading the growth rankings in the S&P Communication Services sector (XLC) as of Q3 2026, receiving 'Buy' ratings based on their growth grades. Meanwhile, traditional telecom giants like AT&T (T) and Verizon (VZ) are lagging with lower growth grades. The growth factor grade is determined by a quantitative assessment of each company's expansion trajectory.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "Seeking Alpha"
+    },
+    {
+      "title": "Meta's AI Spending Could Unlock 'Abundant Revenue,' Analyst Says",
+      "time_published": "20260821T084144",
+      "summary": "A BNP Paribas analyst reiterated an Outperform rating for Meta Platforms (NASDAQ: META), citing the company's aggressive AI investments as a potential source of \"abundant revenue.\" The analyst believes these investments will drive robust growth in Meta's advertising business, complemented by future subscription revenue, cloud offerings, and fees from AI model usage. Despite increasing capital expenditures, the analyst expects these AI-driven revenues, combined with cost discipline, to lead to improved operating income and margin expansion for Meta.",
+      "overall_sentiment_label": "Bullish",
+      "source": "Sahm"
+    },
+    {
+      "title": "Grant Private Wealth Management Inc Grows Stock Position in Microsoft Corporation $MSFT",
+      "time_published": "20260821T070838",
+      "summary": "Grant Private Wealth Management Inc increased its stake in Microsoft Corporation by 24.5% during the second quarter, now owning 18,075 shares valued at $6.74 million. Other institutional investors also adjusted their positions in Microsoft. The article also provides details on Microsoft's stock performance, recent earnings, dividend announcement, analyst ratings, and insider transactions, alongside key headlines impacting the company.",
+      "overall_sentiment_label": "Bullish",
+      "source": "MarketBeat"
+    },
+    {
+      "title": "HIMS Investigation Reminder: Kessler Topaz Meltzer & Check, LLP Encourages Hims & Hers Health, Inc. Investors to Contact the Firm",
+      "time_published": "20260821T024122",
+      "summary": "Kessler Topaz Meltzer & Check, LLP is investigating potential violations of federal securities laws by Hims & Hers Health, Inc. following a lawsuit filed by the Federal Trade Commission (FTC). The FTC accuses HIMS of sharing customers' medical information with third-party advertisers, causing HIMS's stock price to drop over 14%. The law firm is encouraging investors who experienced losses to contact them to discuss their legal rights.",
+      "overall_sentiment_label": "Bearish",
+      "source": "NewMediaWire"
+    },
+    {
+      "title": "Meta platforms chief legal officer Mahoney sells $869,922 in stock",
+      "time_published": "20260821T003827",
+      "summary": "Curtis J. Mahoney, Chief Legal Officer at Meta Platforms Inc. (NASDAQ:META), sold 1,559 shares of the company's Class A Common Stock for $869,922 on August 18, 2026. The sale, executed at $558 per share, was part of a Rule 10b5-1 trading plan adopted in February 2026. Following the transaction, Mahoney directly holds 1,957 shares, while the stock is trading near its 52-week low.",
+      "overall_sentiment_label": "Somewhat-Bearish",
+      "source": "Investing.com"
+    },
+    {
+      "title": "Meta platforms CFO Susan Li sells $5.06m in shares",
+      "time_published": "20260820T233824",
+      "summary": "Susan J. Li, CFO of Meta Platforms Inc. (NASDAQ:META), sold 9,296 shares of company stock worth approximately $5.06 million on August 18, 2026. This transaction occurred while Meta's stock is trading near its 52-week low. The company has also been noted for significant AI investments, strong revenue growth per user, and an Outperform rating from Mizuho, despite facing concerns about its platform designs and smart glasses.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "Investing.com"
+    },
+    {
+      "title": "Snap general counsel Zachary Briers sells over $1 million in stock",
+      "time_published": "20260820T231027",
+      "summary": "Snap Inc.'s General Counsel, Zachary Briers, sold over $1 million worth of Class A Common Stock in mid-August 2026 across two transactions. These sales were partly to cover tax obligations from restricted stock units and partly executed under a pre-arranged trading plan. Despite the stock sales, Mr. Briers still holds a significant number of shares, and the company recently reported strong Q2 results, leading to varied analyst ratings.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Investing.com"
+    },
+    {
+      "title": "Meta Is Spending Hundreds of Millions on Microsoft Azure. What It Means for META and MSFT",
+      "time_published": "20260820T223837",
+      "summary": "Meta Platforms (META) is reportedly spending hundreds of millions of dollars annually on Microsoft Azure to access AI models, making it one of Microsoft's (MSFT) largest AI customers. While this represents a significant individual contribution to Microsoft's Azure revenue, it's a relatively small fraction of Meta's overall infrastructure spending, which is projected to exceed $100 billion in 2026 for AI and data center development. This highlights Meta's willingness to leverage external cloud services even as it heavily invests in its own AI infrastructure.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "TipRanks"
+    },
+    {
+      "title": "Meta Platforms (META) legal chief sells 1,559 shares under 10b5-1 plan",
+      "time_published": "20260820T223825",
+      "summary": "Meta Platforms (META) Chief Legal Officer Curtis J. Mahoney sold 1,559 shares of Class A Common Stock on August 18, 2026, at a price of $558.00 per share. This transaction was carried out under a pre-arranged Rule 10b5-1 trading plan adopted on February 25, 2026. Following the sale, Mahoney directly holds 1,957 shares of Meta Platforms.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Stock Titan"
+    },
+    {
+      "title": "Meta (NASDAQ: META) CTO sells 7,848 shares, keeps trust stake",
+      "time_published": "20260820T223824",
+      "summary": "Meta Platforms, Inc.'s Chief Technology Officer, Andrew Bosworth, sold 7,848 shares of Class A Common Stock for $558.00 per share on August 18, 2026. This transaction was executed under a pre-arranged Rule 10b5-1 trading plan adopted in January 2025. Following the sale, Bosworth directly holds 828 shares and indirectly holds 69,170 shares through his living trust.",
+      "overall_sentiment_label": "Somewhat-Bearish",
+      "source": "Stock Titan"
+    },
+    {
+      "title": "Meta (NASDAQ: META) CFO sells 9,196 shares across 13 trades",
+      "time_published": "20260820T220825",
+      "summary": "Meta Platforms, Inc.'s CFO, Susan J. Li, indirectly sold a total of 9,196 shares of Class A Common Stock across 13 open-market transactions on August 18, 2026. The sales were conducted through The Li-Hegeman Living Trust at prices ranging from the high $540s to low $560s per share. These transactions were executed under a Rule 10b5-1 trading plan adopted on November 25, 2025.",
+      "overall_sentiment_label": "Bearish",
+      "source": "Stock Titan"
+    },
+    {
+      "title": "After becoming China’s answer to YouTube, BiliBili has its eyes on the rest of the world",
+      "time_published": "20260820T191142",
+      "summary": "BiliBili, a 17-year-old Chinese entertainment hub akin to YouTube, is expanding its global presence after establishing itself in China where YouTube is banned. The platform is relaunching an international platform, dropping ID requirements for overseas signups, and hiring staff in major cities worldwide to compete in the global video market. BiliBili aims to attract Western creators by offering monetization features like real-time \"danmu\" comments and direct fan funding, hoping to replicate the success of TikTok's international expansion.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Tubefilter"
+    },
+    {
+      "title": "Zuckerberg's manifesto: Do Meta's promises and actions align?",
+      "time_published": "20260820T181020",
+      "summary": "Mark Zuckerberg's \"AI manifesto,\" \"The Future is for Everyone,\" outlines a vision of democratized AI and personal superintelligence agents. However, the article questions whether Meta's past actions and current capabilities align with this ambitious vision, particularly concerning its commitment to open-source principles and its standing in the competitive AI landscape. It suggests that Meta's public stance might be more of a PR move to position itself amidst stronger AI contenders.",
+      "overall_sentiment_label": "Neutral",
+      "source": "TechTarget"
+    },
+    {
+      "title": "Meta Stock Climbs as Landmark Trial Threatens $1.4 Trillion Penalties",
+      "time_published": "20260820T170953",
+      "summary": "Meta Platforms (NASDAQ: META) stock rose over 1% despite a California trial that could lead to $1.4 trillion in penalties, as 29 state attorneys general accuse the company of illegally collecting children’s data and misleading consumers. Experts warn that the lawsuit threatens Meta’s social media advertising model, complicates its AI transition, and could expose it to larger future legal challenges, including algorithm regulation and issues arising from AI agents. Despite these risks, Meta's stock performance indicates traders are balancing legal concerns with a generally constructive market.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Sahm"
+    },
+    {
+      "title": "Broadcom seeks more than $60 billion in latest AI debt deal, Bloomberg News reports",
+      "time_published": "20260820T153800",
+      "summary": "Broadcom is reportedly in discussions with lenders to secure over $60 billion in debt for an AI chip financing deal that would benefit Anthropic and other companies. This financing could involve a junior debt tranche of roughly $30 billion and a senior-secured tranche ranging from $60 billion to $70 billion, potentially raising the total to $100 billion. The move aligns with tech companies, including Blackstone and Apollo, increasingly using debt to fund significant AI investments and reduce reliance on market leaders like Nvidia.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "Yahoo Finance"
+    },
+    {
+      "title": "CrowdStrike Holdings Inc Stock (CRWD) Moved Down by 3.97% on Aug 20: A Full Analysis",
+      "time_published": "20260820T151533",
+      "summary": "CrowdStrike Holdings Inc (CRWD) saw its stock decline by 3.97% on August 20th, primarily due to the announced departure of its Global CTO, Elia Zaitsev. The drop was exacerbated by pre-earnings profit-taking amid elevated valuation multiples and recent insider selling. Despite these pressures, the company maintains a strong market position in endpoint security and cloud workload protection, with future performance dependent on upcoming earnings and annual recurring revenue targets.",
+      "overall_sentiment_label": "Somewhat-Bearish",
+      "source": "TradingKey"
+    },
+    {
+      "title": "Meta Falls Far Behind Amazon, Alphabet, and Microsoft In AI",
+      "time_published": "20260820T144816",
+      "summary": "Meta's market capitalization of $1.39 trillion significantly lags behind Amazon ($2.87 trillion), Microsoft ($3.60 trillion), and Alphabet ($4.19 trillion) in the AI race, despite CEO Mark Zuckerberg's 14-page AI manifesto. Even private AI rival Anthropic is nearing or surpassing Meta's valuation, highlighting investors' diminished view of Meta's social media business and AI strategy compared to its tech giant peers. The article emphasizes market cap as a crucial indicator of investor confidence in the AI supremacy battle, noting that legacy businesses are becoming less relevant as AI's importance grows.",
+      "overall_sentiment_label": "Neutral",
+      "source": "24/7 Wall St."
+    },
+    {
+      "title": "Bilibili goes global: China’s video giant takes aim at YouTube",
+      "time_published": "20260820T091142",
+      "summary": "Chinese video platform Bilibili is making a significant push into international markets with a new global app, plans for an English website, and a creator acquisition strategy, aiming to compete with platforms like YouTube and TikTok. The company is focusing on attracting creators by positioning itself as a platform for engaged Gen Z audiences and developing a marketplace for sponsorships. While Bilibili faces challenges regarding trust, content moderation, and intense competition, its success will depend on its ability to translate its strong youth and creator culture across borders.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "Storyboard18"
+    },
+    {
+      "title": "Meta Has Quietly Become One of Microsoft’s Largest AI Customers",
+      "time_published": "20260820T070000",
+      "summary": "Meta Platforms Inc. has become one of Microsoft Corp.'s biggest AI customers, spending hundreds of millions of dollars annually on Microsoft's Azure cloud service for AI models. This highlights a trend where demand for AI technology is concentrated within the tech industry, with other major tech companies like ByteDance and Adobe also being significant customers. Despite this, Microsoft aims for broader AI adoption across traditional industries while Meta also develops its own AI models and services, potentially competing with Microsoft's offerings in the future.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "Yahoo Finance"
+    },
+    {
+      "title": "WisdomTree GeoAlpha Opportunities Fund(OPPG) - 股價行情、配息與走勢圖- 股市爆料同學會",
+      "time_published": "20260819T211209",
+      "summary": "This article provides detailed financial information for the WisdomTree GeoAlpha Opportunities Fund (OPPG), an ETF. It includes real-time quotes, technical analysis, performance metrics, and key holdings. The fund has an asset scale of 0.02 billion, a net value of 36.73, and an expense ratio of 0.58%.",
+      "overall_sentiment_label": "Neutral",
+      "source": "CMoney"
+    },
+    {
+      "title": "Alphabet Stock Surged When Its AI Spending Found Customers",
+      "time_published": "20260819T210954",
+      "summary": "Alphabet's stock significantly outperformed the market and its peers over the past year, returning 69.6% compared to the S&P 500's 20.3%. This surge is attributed to its AI spending finding customers, particularly in Google Cloud, which saw 82% revenue growth and improved operating margins. Despite increased capital expenditure and pressure on free cash flow, the company's strategic investments in AI are proving successful.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Yahoo Finance"
+    },
+    {
+      "title": "Uber Technologies Inc Stock (UBER) Closed Up by 4.38% on Aug 19: What Signal Does It Send?",
+      "time_published": "20260819T200941",
+      "summary": "Uber Technologies Inc. (UBER) stock rose by 4.38% due to strong technical support and positive analyst sentiment, driven by its asset-light autonomous vehicle strategy and robust core mobility and delivery operations. Despite previous valuation concerns, investors are focusing on the company's long-term valuation and high institutional ownership. Technical indicators also suggest a buy signal, and analysts maintain bullish ratings with an average price target of $102.20.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "TradingKey"
+    },
+    {
+      "title": "Salesforce Inc Stock (CRM) Moved Up by 5.07% on Aug 19: What Investors Need To Know",
+      "time_published": "20260819T181943",
+      "summary": "Salesforce Inc. (CRM) shares rose by 5.07% on August 19, driven by positive Wall Street sentiment and growing optimism for its enterprise AI strategy, especially with the accelerating monetization of its Agentforce and Data 360 platforms. Technical indicators like MACD and Williams %R suggest a \"buy\" condition, and institutional investors are increasingly confident ahead of the company's second-quarter earnings announcement. However, the article also notes company-specific risks including sluggish organic growth, slow net-new AI monetization, balance sheet leverage, and downside hedging in the options market.",
+      "overall_sentiment_label": "Bullish",
+      "source": "TradingKey"
+    },
+    {
+      "title": "Apple stock stands out among Magnificent Seven on low AI spending",
+      "time_published": "20260819T175500",
+      "summary": "Apple's conservative approach to AI spending has positioned its stock as a hedge against market volatility, setting it apart from other \"Magnificent Seven\" tech companies. While rivals pour billions into AI infrastructure, Apple's lower capital expenditure has led to strong financial performance and outperformance of its peers, especially after a period of investor anxiety over high AI costs. The company recently reported record June quarter revenues and regained its position as the world's most valuable company.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "Quartz"
+    },
+    {
+      "title": "Palo Alto Networks Inc Stock (PANW) Moved Down by 3.79% on Aug 19: Facts Behind the Movement",
+      "time_published": "20260819T161556",
+      "summary": "Palo Alto Networks (PANW) stock declined by 3.79% due to profit-taking and elevated valuations, as investors reposition their portfolios ahead of upcoming fiscal fourth-quarter earnings. Despite positive technical indicators like a MACD buy signal and neutral RSI, and robust cybersecurity market trends, the stock's near-term performance is expected to remain volatile amidst macroeconomic uncertainty and high valuation multiples. The company faces specific risks including regulatory scrutiny in China, deceleration in organic growth, margin compression from M&A, and insider share dispositions.",
+      "overall_sentiment_label": "Neutral",
+      "source": "TradingKey"
+    },
+    {
+      "title": "SAP SE Stock (SAP) Moved Up by 3.52% on Aug 19: A Full Analysis",
+      "time_published": "20260819T161032",
+      "summary": "SAP SE (SAP) stock increased by 3.52% on August 19, driven by corporate capital return initiatives, strong cloud operations, and increased integration of artificial intelligence. Technical indicators suggest a buy signal, while analyst ratings average a \"Buy\" with a target price of $253.74. The article also highlights company-specific risks such as trimmed operating profit outlooks and critical security vulnerabilities.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "TradingKey"
+    },
+    {
+      "title": "Pacer S&P 500 3AI Top 100 ETF(PSAI) - K線圖分析(MA、KD、MACD、RSI) - 股市爆料同學會",
+      "time_published": "20260819T141038",
+      "summary": "The article provides technical analysis of the Pacer S&P 500 3AI Top 100 ETF (PSAI), covering metrics like MA, KD, MACD, and RSI. It also lists the ETF's top five holdings, including KLA Corp, Vertiv, DoorDash, Meta, and GE Vernova. The page includes discussion forums on various stocks and ETFs.",
+      "overall_sentiment_label": "Neutral",
+      "source": "CMoney"
+    },
+    {
+      "title": "Amazon (AMZN) Sees Bigger AWS Growth, but Rising Competition Could Pressure Returns",
+      "time_published": "20260819T131407",
+      "summary": "Eagle Capital Management, in its Q2 2026 investor letter, highlighted Amazon.com, Inc. (AMZN), acknowledging its strong AWS growth and leading market position. While the firm recognizes Amazon's potential, it expresses concerns about rising competition in the cloud industry and suggests that other AI stocks might offer greater upside potential with less downside risk. Despite Amazon's robust Q1 2026 revenue growth, Eagle Capital is diversifying its portfolio beyond the most crowded AI trades, favoring a strategy that performs across multiple outcomes.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "Yahoo Finance"
+    },
+    {
+      "title": "Serenity Capital Management PTE. LTD. Invests $6.72 Billion in Alibaba Group Holding Limited $BABA",
+      "time_published": "20260819T104211",
+      "summary": "Serenity Capital Management PTE. LTD. has made a significant investment in Alibaba Group Holding Limited ($BABA), purchasing 70,000 shares valued at approximately $6.72 billion. This acquisition makes Alibaba its 11th largest holding, representing about 2% of the fund's portfolio. Despite some insider selling primarily for tax obligations, analysts generally maintain a \"Moderate Buy\" rating for Alibaba, with an average price target of $186.90.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "MarketBeat"
+    },
+    {
+      "title": "METQ Price History for Tradr 2X Short META Daily ETF",
+      "time_published": "20260819T071141",
+      "summary": "This article provides detailed price history information for the Tradr 2X Short META Daily ETF (METQ). It highlights various historical data access options for Barchart members, including daily prices, latest trades, and corporate actions, with different levels of access based on membership tiers. The page also features widgets for 52-week key points, new highs, and new lows for the symbol.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Barchart.com"
+    },
+    {
+      "title": "Meta (NASDAQ: META) director now holds 3,329 Class A shares",
+      "time_published": "20260819T060855",
+      "summary": "Meta Platforms, Inc. director Arnold John Douglas reported the vesting of 167 Restricted Stock Units (RSUs) into Class A Common Stock on August 15, 2026. Following this transaction, he now directly holds 3,329 Class A shares and 1,004 RSUs. The RSUs vest quarterly, with some settlements deferred under Meta’s Deferred Compensation Plan for Non-Employee Directors.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Stock Titan"
+    },
+    {
+      "title": "META: Meta’s $1.4 Trillion Legal Nightmare Begins. Is the Stock at Risk?",
+      "time_published": "20260819T050835",
+      "summary": "Meta Platforms is facing a landmark federal trial in Oakland, with 29 states suing the company for allegedly designing Facebook and Instagram to addict children and misleading families about the platforms' risks. The states are seeking up to $1.4 trillion in damages, a figure close to Meta's entire market capitalization. While the payout is uncertain, traders are watching closely for potential court orders that could force Meta to redesign its platforms, which could impact engagement and advertising revenue.",
+      "overall_sentiment_label": "Somewhat-Bearish",
+      "source": "TradingView"
+    },
+    {
+      "title": "Tradr Debuts First-to-Market ETFs on Meta, AXT, Coherent & Lightwave Logic",
+      "time_published": "20260819T050038",
+      "summary": "Tradr ETFs has launched four new first-to-market single-stock leveraged ETFs on Cboe, providing 2X long or inverse exposure to Meta Platforms, AXT, Coherent Corp., and Lightwave Logic. These ETFs are designed for sophisticated investors and professional traders, offering tools to express bullish and bearish views on these technology stocks. The new offerings expand Tradr's product line to 83 leveraged ETFs, enabling investors to gain magnified exposure without using margin or complex options trading.",
+      "overall_sentiment_label": "Somewhat-Bullish",
+      "source": "Investing News Network"
+    },
+    {
+      "title": "Meta CFO Susan Li acquires shares, stock withheld for tax obligations",
+      "time_published": "20260819T023857",
+      "summary": "Meta CFO Susan Li acquired 18,245 shares of Class A Common Stock through RSU settlements on August 15, 2026. Meta Platforms subsequently withheld 9,049 shares, valued at approximately $5.55 million, to cover tax obligations. Following these transactions, Ms. Li's indirect beneficial ownership adjusted to 22,382 shares, while Meta's stock is trading near its 52-week low.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Investing.com"
+    },
+    {
+      "title": "Meta (NASDAQ: META) officer Powell settles RSUs, withholds shares for tax",
+      "time_published": "20260819T011042",
+      "summary": "Meta Platforms, Inc. (META) officer Dina H. Powell had 7,732 Restricted Stock Units (RSUs) settle into Class A Common Stock on August 15, 2026. A total of 3,518 shares were withheld by Meta at $589.85 per share to cover income tax obligations, explicitly stated as not representing a sale. The Form 4 filing details the vesting schedules for the two RSU awards and confirms no open-market stock sales or purchases were made.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Stock Titan"
+    },
+    {
+      "title": "Meta Platforms (NASDAQ: META) insider Collison receives 103 shares as RSUs vest",
+      "time_published": "20260819T010556",
+      "summary": "Patrick Collison, a director at Meta Platforms (NASDAQ: META), reported the settlement of 103 restricted stock units (RSUs) into Class A common stock on August 15, 2026. This transaction resulted in the acquisition of 103 shares at $0.00 per share. Following this event, Collison directly holds 1,166 shares of Class A Common Stock and 1,129 RSUs.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Stock Titan"
+    },
+    {
+      "title": "Meta Platforms (NASDAQ: META) CTO logs 16,389-share RSU vesting",
+      "time_published": "20260819T010556",
+      "summary": "Meta Platforms' Chief Technology Officer, Andrew Bosworth, reported the vesting of 16,389 Restricted Stock Units (RSUs) on August 15, 2026. These RSUs were converted into Class A Common Stock, with 8,127 shares withheld by Meta at $589.85 per share to cover income tax obligations. Following these transactions, Bosworth indirectly holds 69,170 Class A shares through the Andrew Bosworth Living Trust.",
+      "overall_sentiment_label": "Neutral",
+      "source": "Stock Titan"
+    }
+  ]
+}

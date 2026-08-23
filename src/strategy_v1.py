@@ -292,6 +292,60 @@ def calculate_performance_metrics(trades, initial_capital, final_value, df):
         "completed_trades": completed_trades
     }
 
+def build_trade_diagnostics(df, completed_trades):
+    """
+    針對每一筆完整交易（進場到出場），計算詳細的診斷資訊：
+    持有天數、同期間市場報酬、最大有利偏移(MFE)、最大不利偏移(MAE)。
+
+    df: 原始股價 DataFrame（必須包含 date, close 欄位）
+    completed_trades: calculate_performance_metrics() 產生的 completed_trades 清單
+
+    回傳：一個更詳細的交易診斷清單
+    """
+
+    diagnostics = []
+
+    for trade in completed_trades:
+        entry_date = trade["entry_date"]
+        exit_date = trade["exit_date"]
+        entry_price = trade["entry_price"]
+
+        # 取出這筆交易「持有期間」對應的股價區間（用日期字串比較，因為日期格式是YYYY-MM-DD，字串排序恰好等於時間排序）
+        window = df[(df["date"] >= entry_date) & (df["date"] <= exit_date)]
+
+        if window.empty:
+            continue
+
+        # 持有天數：用實際日曆天數計算（而非交易日數），方便跟其他時間單位比較
+        holding_days = (pd.to_datetime(exit_date) - pd.to_datetime(entry_date)).days
+
+        # 同期間市場報酬：如果单纯持有股票、不透過任何策略訊號，這段期間的原始漲跌幅
+        window_start_close = window["close"].iloc[0]
+        window_end_close = window["close"].iloc[-1]
+        market_return_pct = round((window_end_close - window_start_close) / window_start_close * 100, 2)
+
+        # MFE：這段期間股價曾經漲到的最高點，相對進場價的漲幅
+        max_close = window["close"].max()
+        mfe_pct = round((max_close - entry_price) / entry_price * 100, 2)
+
+        # MAE：這段期間股價曾經跌到的最低點，相對進場價的跌幅
+        min_close = window["close"].min()
+        mae_pct = round((min_close - entry_price) / entry_price * 100, 2)
+
+        diagnostics.append({
+            "entry_date": entry_date,
+            "entry_price": round(entry_price, 2),
+            "exit_date": exit_date,
+            "exit_price": round(trade["exit_price"], 2),
+            "return_pct": trade["return_pct"],
+            "holding_days": holding_days,
+            "market_return_pct": market_return_pct,
+            "mfe_pct": mfe_pct,
+            "mae_pct": mae_pct
+        })
+
+    return diagnostics
+
 if __name__ == "__main__":
     from src.stock_data import get_long_history_stock_data, get_crypto_daily_data, clean_crypto_data
 
