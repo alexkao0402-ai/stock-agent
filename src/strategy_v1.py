@@ -195,6 +195,742 @@ def run_backtest_v1(df, initial_capital=10000, transaction_cost_pct=0.001, slipp
 
     return result
 
+def run_backtest_v1_with_takeprofit(df, initial_capital=10000, transaction_cost_pct=0.001,
+                                      slippage_pct=0.0005, take_profit_pct=25.0):
+    """
+    在原本Strategy V1的基礎上，加入停利機制：
+    持有期間只要帳面獲利達到 take_profit_pct，就主動出場，不等待趨勢反轉訊號。
+    這是為了解決診斷分析發現的「缺乏停利機制導致獲利回吐」問題。
+
+    df: 已經跑過 add_entry_exit_signals() 的 DataFrame
+    take_profit_pct: 停利門檻（百分比），預設25%，這是一個合理的固定猜測值，不是優化過的最佳參數
+
+    回傳：跟 run_backtest_v1() 相同格式的結果字典
+    """
+
+    cash = initial_capital
+    shares = 0
+    entry_price = None  # 記錄目前持有部位的進場價，用來判斷是否達到停利門檻
+    trades = []
+
+    for _, row in df.iterrows():
+        current_price = row["close"]
+
+        # ---------- 停利檢查：只要目前有持股，且今天的收盤價已經比進場價高出門檻，就主動賣出 ----------
+        # 這個檢查獨立於原本的訊號邏輯，用「今天收盤價」判斷，並用「今天收盤價」執行
+        # （這裡不是隔天執行，因為主動停利是「看到達標當下立刻行動」，這是策略設計上的合理假設，
+        #  而不是像原本趨勢訊號那樣需要等隔天開盤，兩者屬於不同性質的決策）
+        if shares > 0 and entry_price is not None:
+            current_gain_pct = (current_price - entry_price) / entry_price * 100
+            if current_gain_pct >= take_profit_pct:
+                actual_price = current_price * (1 - slippage_pct)
+                gross_cash = shares * actual_price
+                cash = gross_cash * (1 - transaction_cost_pct)
+                trades.append({
+                    "date": row["date"],
+                    "action": "sell",
+                    "execution_price": actual_price,
+                    "shares": shares,
+                    "reason": f"觸發停利機制（獲利達{round(current_gain_pct, 2)}%，門檻{take_profit_pct}%）"
+                })
+                shares = 0
+                entry_price = None
+                continue  # 這一天已經處理過停利賣出，不用再檢查原本的訊號
+
+        if pd.isna(row["execution_price"]):
+            continue
+
+        if row["signal"] == "buy" and cash > 0:
+            raw_price = row["execution_price"]
+            actual_price = raw_price * (1 + slippage_pct)
+            cash_after_fee = cash * (1 - transaction_cost_pct)
+            shares = cash_after_fee / actual_price
+            cash = 0
+            entry_price = actual_price  # 記錄這次進場價，供之後停利判斷使用
+
+            trades.append({
+                "date": row["date"],
+                "action": "buy",
+                "execution_price": actual_price,
+                "shares": shares,
+                "reason": "三因子條件成立"
+            })
+
+        elif row["signal"] == "sell" and shares > 0:
+            raw_price = row["execution_price"]
+            actual_price = raw_price * (1 - slippage_pct)
+            gross_cash = shares * actual_price
+            cash = gross_cash * (1 - transaction_cost_pct)
+
+            trades.append({
+                "date": row["date"],
+                "action": "sell",
+                "execution_price": actual_price,
+                "shares": shares,
+                "reason": "趨勢轉空頭 或 不再優於BTC"
+            })
+            shares = 0
+            entry_price = None
+
+    final_price = df["close"].iloc[-1]
+    final_value = cash + (shares * final_price)
+    total_return_pct = round((final_value - initial_capital) / initial_capital * 100, 2)
+
+    return {
+        "initial_capital": initial_capital,
+        "final_value": round(final_value, 2),
+        "total_return_pct": total_return_pct,
+        "number_of_trades": len(trades),
+        "take_profit_pct": take_profit_pct,
+        "trades": trades,
+        "still_holding_shares": shares > 0
+    }
+
+def run_backtest_v1_with_takeprofit_v2(
+    df,
+    initial_capital=10000,
+    transaction_cost_pct=0.001,
+    slippage_pct=0.0005,
+    take_profit_pct=25.0
+):
+    """
+    Strategy V1 + fixed take-profit.
+
+    Important execution assumption:
+    - The take-profit trigger uses the day's HIGH.
+    - If HIGH reaches the take-profit price, the trade is assumed
+      to execute at the take-profit price.
+    - This avoids assuming that we can observe the closing price
+      and then execute at that same closing price.
+
+    This is a research assumption for daily OHLC backtesting.
+    """
+
+    cash = initial_capital
+    shares = 0
+    entry_price = None
+    trades = []
+
+    for _, row in df.iterrows():
+
+        current_close = row["close"]
+        current_high = row["high"]
+
+        # --------------------------------------------------
+        # 1. TAKE PROFIT
+        # --------------------------------------------------
+
+        if shares > 0 and entry_price is not None:
+
+            take_profit_price = entry_price * (
+                1 + take_profit_pct / 100
+            )
+
+            # Use HIGH to determine whether the price
+            # reached the take-profit level.
+            if current_high >= take_profit_price:
+
+                actual_price = take_profit_price * (
+                    1 - slippage_pct
+                )
+
+                gross_cash = shares * actual_price
+
+                cash = gross_cash * (
+                    1 - transaction_cost_pct
+                )
+
+                current_gain_pct = (
+                    (take_profit_price - entry_price)
+                    / entry_price
+                    * 100
+                )
+
+                trades.append({
+                    "date": row["date"],
+                    "action": "sell",
+                    "execution_price": actual_price,
+                    "shares": shares,
+                    "reason": (
+                        f"Take profit triggered "
+                        f"({current_gain_pct:.2f}%)"
+                    )
+                })
+
+                shares = 0
+                entry_price = None
+
+                continue
+
+        # --------------------------------------------------
+        # 2. NORMAL STRATEGY SIGNAL
+        # --------------------------------------------------
+
+        if pd.isna(row["execution_price"]):
+            continue
+
+        if row["signal"] == "buy" and cash > 0:
+
+            raw_price = row["execution_price"]
+
+            actual_price = raw_price * (
+                1 + slippage_pct
+            )
+
+            cash_after_fee = cash * (
+                1 - transaction_cost_pct
+            )
+
+            shares = cash_after_fee / actual_price
+
+            cash = 0
+
+            entry_price = actual_price
+
+            trades.append({
+                "date": row["date"],
+                "action": "buy",
+                "execution_price": actual_price,
+                "shares": shares,
+                "reason": "Three-factor signal"
+            })
+
+        elif row["signal"] == "sell" and shares > 0:
+
+            raw_price = row["execution_price"]
+
+            actual_price = raw_price * (
+                1 - slippage_pct
+            )
+
+            gross_cash = shares * actual_price
+
+            cash = gross_cash * (
+                1 - transaction_cost_pct
+            )
+
+            trades.append({
+                "date": row["date"],
+                "action": "sell",
+                "execution_price": actual_price,
+                "shares": shares,
+                "reason": (
+                    "Trend reversal or relative strength failure"
+                )
+            })
+
+            shares = 0
+            entry_price = None
+
+    # --------------------------------------------------
+    # 3. FINAL PORTFOLIO VALUE
+    # --------------------------------------------------
+
+    final_price = df["close"].iloc[-1]
+
+    final_value = cash + (
+        shares * final_price
+    )
+
+    total_return_pct = (
+        (final_value - initial_capital)
+        / initial_capital
+        * 100
+    )
+
+    return {
+        "initial_capital": initial_capital,
+        "final_value": round(final_value, 2),
+        "total_return_pct": round(total_return_pct, 2),
+        "number_of_trades": len(trades),
+        "take_profit_pct": take_profit_pct,
+        "trades": trades,
+        "still_holding_shares": shares > 0
+    }
+
+def run_backtest_v1_with_trailing_exit(
+    df,
+    initial_capital=10000,
+    transaction_cost_pct=0.001,
+    slippage_pct=0.0005,
+    trailing_pct=20.0
+):
+    """
+    Strategy V1 + trailing exit.
+
+    The trailing level is calculated from the highest HIGH
+    observed since entering the position.
+
+    If the day's LOW reaches the trailing level,
+    the position exits at the trailing level.
+
+    This is a fixed research baseline, not an optimized parameter.
+    """
+
+    cash = initial_capital
+    shares = 0
+    entry_price = None
+    highest_price = None
+    trades = []
+
+    for _, row in df.iterrows():
+
+        current_high = row["high"]
+        current_low = row["low"]
+
+        # ==========================================
+        # 1. TRAILING EXIT
+        # ==========================================
+
+        if shares > 0 and highest_price is not None:
+
+            # Update highest price reached
+            highest_price = max(
+                highest_price,
+                current_high
+            )
+
+            trailing_price = highest_price * (
+                1 - trailing_pct / 100
+            )
+
+            # If today's low reaches trailing level
+            if current_low <= trailing_price:
+
+                actual_price = trailing_price * (
+                    1 - slippage_pct
+                )
+
+                gross_cash = shares * actual_price
+
+                cash = gross_cash * (
+                    1 - transaction_cost_pct
+                )
+
+                trades.append({
+                    "date": row["date"],
+                    "action": "sell",
+                    "execution_price": actual_price,
+                    "shares": shares,
+                    "reason": (
+                        f"Trailing exit "
+                        f"({trailing_pct}% from high)"
+                    )
+                })
+
+                shares = 0
+                entry_price = None
+                highest_price = None
+
+                continue
+
+        # ==========================================
+        # 2. NORMAL SIGNAL
+        # ==========================================
+
+        if pd.isna(row["execution_price"]):
+            continue
+
+        if row["signal"] == "buy" and cash > 0:
+
+            raw_price = row["execution_price"]
+
+            actual_price = raw_price * (
+                1 + slippage_pct
+            )
+
+            cash_after_fee = cash * (
+                1 - transaction_cost_pct
+            )
+
+            shares = cash_after_fee / actual_price
+
+            cash = 0
+
+            entry_price = actual_price
+            highest_price = current_high
+
+            trades.append({
+                "date": row["date"],
+                "action": "buy",
+                "execution_price": actual_price,
+                "shares": shares,
+                "reason": "Three-factor signal"
+            })
+
+        elif row["signal"] == "sell" and shares > 0:
+
+            raw_price = row["execution_price"]
+
+            actual_price = raw_price * (
+                1 - slippage_pct
+            )
+
+            gross_cash = shares * actual_price
+
+            cash = gross_cash * (
+                1 - transaction_cost_pct
+            )
+
+            trades.append({
+                "date": row["date"],
+                "action": "sell",
+                "execution_price": actual_price,
+                "shares": shares,
+                "reason": (
+                    "Trend reversal or relative strength failure"
+                )
+            })
+
+            shares = 0
+            entry_price = None
+            highest_price = None
+
+    # ==========================================
+    # 3. FINAL VALUE
+    # ==========================================
+
+    final_price = df["close"].iloc[-1]
+
+    final_value = cash + (
+        shares * final_price
+    )
+
+    total_return_pct = (
+        (final_value - initial_capital)
+        / initial_capital
+        * 100
+    )
+
+    return {
+        "initial_capital": initial_capital,
+        "final_value": round(final_value, 2),
+        "total_return_pct": round(total_return_pct, 2),
+        "number_of_trades": len(trades),
+        "trailing_pct": trailing_pct,
+        "trades": trades,
+        "still_holding_shares": shares > 0
+    }
+
+def run_backtest_v1_with_equity_curve(
+    df,
+    initial_capital=10000,
+    transaction_cost_pct=0.001,
+    slippage_pct=0.0005
+):
+    """
+    Strategy V1 + Daily Equity Curve
+
+    正確的時間軸：
+
+    Day T:
+        使用 Day T 的資料產生 signal
+
+    Day T+1:
+        使用 Day T+1 的 OPEN 執行交易
+
+    Day T+1 收盤:
+        用 Day T+1 CLOSE 計算當日 portfolio value
+
+    這樣可以避免把未來的開盤價提前拿來交易。
+    """
+
+    cash = initial_capital
+    shares = 0
+
+    trades = []
+    equity_curve = []
+
+    # ==================================================
+    # 按日期由舊到新逐日處理
+    # ==================================================
+
+    for i in range(len(df)):
+
+        row = df.iloc[i]
+
+        current_date = row["date"]
+        current_open = row["open"]
+        current_close = row["close"]
+
+        # ==================================================
+        # 1. 執行「昨天產生的 signal」
+        # ==================================================
+
+        if i > 0:
+
+            previous_row = df.iloc[i - 1]
+
+            previous_signal = previous_row["signal"]
+
+            # ------------------------------------------
+            # BUY
+            # ------------------------------------------
+
+            if previous_signal == "buy" and cash > 0:
+
+                raw_price = current_open
+
+                actual_price = raw_price * (
+                    1 + slippage_pct
+                )
+
+                cash_after_fee = cash * (
+                    1 - transaction_cost_pct
+                )
+
+                shares = cash_after_fee / actual_price
+
+                cash = 0
+
+                trades.append({
+                    "date": current_date,
+                    "action": "buy",
+                    "signal_date": previous_row["date"],
+                    "execution_price": actual_price,
+                    "shares": shares,
+                    "reason": (
+                        "三因子條件成立："
+                        "趨勢多頭 + 正動能 + 優於BTC"
+                    )
+                })
+
+            # ------------------------------------------
+            # SELL
+            # ------------------------------------------
+
+            elif previous_signal == "sell" and shares > 0:
+
+                raw_price = current_open
+
+                actual_price = raw_price * (
+                    1 - slippage_pct
+                )
+
+                gross_cash = shares * actual_price
+
+                cash = gross_cash * (
+                    1 - transaction_cost_pct
+                )
+
+                trades.append({
+                    "date": current_date,
+                    "action": "sell",
+                    "signal_date": previous_row["date"],
+                    "execution_price": actual_price,
+                    "shares": shares,
+                    "reason": (
+                        "趨勢轉空頭 或 不再優於BTC"
+                    )
+                })
+
+                shares = 0
+
+        # ==================================================
+        # 2. 每日 Mark-to-Market
+        # ==================================================
+
+        position_value = shares * current_close
+
+        portfolio_value = cash + position_value
+
+        equity_curve.append({
+            "date": current_date,
+            "close": current_close,
+            "cash": cash,
+            "shares": shares,
+            "position_value": position_value,
+            "portfolio_value": portfolio_value,
+            "position": 1 if shares > 0 else 0
+        })
+
+    # ==================================================
+    # 3. Equity Curve DataFrame
+    # ==================================================
+
+    equity_df = pd.DataFrame(equity_curve)
+
+    # ==================================================
+    # 4. 最終績效
+    # ==================================================
+
+    final_value = equity_df["portfolio_value"].iloc[-1]
+
+    total_return_pct = (
+        (final_value - initial_capital)
+        / initial_capital
+        * 100
+    )
+
+    return {
+        "initial_capital": initial_capital,
+        "final_value": round(final_value, 2),
+        "total_return_pct": round(total_return_pct, 2),
+        "number_of_trades": len(trades),
+        "transaction_cost_pct": transaction_cost_pct,
+        "slippage_pct": slippage_pct,
+        "trades": trades,
+        "still_holding_shares": shares > 0,
+        "equity_curve": equity_df
+    }
+
+def calculate_max_drawdown(equity_df):
+    """
+    根據每日 Portfolio Value 計算 Maximum Drawdown。
+
+    Maximum Drawdown = 從歷史高點到之後最低點的最大跌幅。
+
+    回傳：
+    {
+        "max_drawdown_pct": ...,
+        "peak_date": ...,
+        "trough_date": ...
+    }
+    """
+
+    equity = equity_df["portfolio_value"]
+
+    running_max = equity.cummax()
+
+    drawdown = (
+        equity - running_max
+    ) / running_max * 100
+
+    min_index = drawdown.idxmin()
+
+    max_drawdown_pct = drawdown.loc[min_index]
+
+    peak_index = equity.loc[:min_index].idxmax()
+
+    return {
+        "max_drawdown_pct": round(max_drawdown_pct, 2),
+        "peak_date": equity_df.loc[peak_index, "date"],
+        "trough_date": equity_df.loc[min_index, "date"]
+    }
+
+def calculate_risk_metrics(equity_df):
+    """
+    根據每日 Equity Curve 計算風險調整後績效。
+
+    使用：
+    - Daily Return
+    - Annualized Volatility
+    - Sharpe Ratio
+    - Sortino Ratio
+    - Maximum Drawdown
+
+    假設一年約 252 個交易日。
+    無風險利率目前先假設為 0%，
+    方便建立第一版研究基準。
+    """
+
+    equity = equity_df["portfolio_value"].copy()
+
+    # ==========================================
+    # 每日報酬率
+    # ==========================================
+
+    daily_returns = equity.pct_change().dropna()
+
+    if len(daily_returns) == 0:
+        return {
+            "annualized_volatility_pct": None,
+            "sharpe_ratio": None,
+            "sortino_ratio": None,
+            "max_drawdown_pct": None
+        }
+
+    # ==========================================
+    # 年化波動率
+    # ==========================================
+
+    daily_volatility = daily_returns.std()
+
+    annualized_volatility = (
+        daily_volatility * (252 ** 0.5)
+    )
+
+    # ==========================================
+    # Sharpe Ratio
+    #
+    # Risk-free rate = 0%
+    # ==========================================
+
+    daily_mean_return = daily_returns.mean()
+
+    if daily_volatility > 0:
+
+        sharpe_ratio = (
+            daily_mean_return
+            / daily_volatility
+        ) * (252 ** 0.5)
+
+    else:
+        sharpe_ratio = None
+
+    # ==========================================
+    # Sortino Ratio
+    #
+    # 只懲罰負報酬
+    # ==========================================
+
+    downside_returns = daily_returns[
+        daily_returns < 0
+    ]
+
+    if len(downside_returns) > 0:
+
+        downside_deviation = (
+            downside_returns.std()
+        )
+
+        if downside_deviation > 0:
+
+            sortino_ratio = (
+                daily_mean_return
+                / downside_deviation
+            ) * (252 ** 0.5)
+
+        else:
+            sortino_ratio = None
+
+    else:
+        sortino_ratio = None
+
+    # ==========================================
+    # Maximum Drawdown
+    # ==========================================
+
+    running_max = equity.cummax()
+
+    drawdown = (
+        equity - running_max
+    ) / running_max
+
+    max_drawdown = drawdown.min()
+
+    return {
+        "annualized_volatility_pct": round(
+            annualized_volatility * 100,
+            2
+        ),
+
+        "sharpe_ratio": round(
+            sharpe_ratio,
+            3
+        ) if sharpe_ratio is not None else None,
+
+        "sortino_ratio": round(
+            sortino_ratio,
+            3
+        ) if sortino_ratio is not None else None,
+
+        "max_drawdown_pct": round(
+            max_drawdown * 100,
+            2
+        )
+    }
+
 def calculate_buy_and_hold(df, initial_capital=10000):
     """
     計算「從資料第一天就買進，一路持有到最後一天」的績效，作為比較基準。
