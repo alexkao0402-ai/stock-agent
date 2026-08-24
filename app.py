@@ -15,6 +15,11 @@ from src.strategy_v1 import (
     calculate_buy_and_hold, calculate_performance_metrics
 )
 import time
+from src.strategy_v1 import (
+    run_backtest_v1_with_equity_curve, run_backtest_v1_with_takeprofit_v2,
+    run_backtest_v1_with_trailing_exit, calculate_risk_metrics, build_comparison_row
+)
+from src.regime_analysis import build_regime_series
 
 
 st.set_page_config(page_title="AI 股票研究助理", page_icon="📈")
@@ -186,6 +191,54 @@ if st.button("開始分析"):
                             st.dataframe(diag_df, use_container_width=True)
 
                         st.caption("⚠️ 此為規則型策略回測，完全不使用AI判斷。過去表現不代表未來績效，且此策略在特定股票上可能表現不佳，這是正常且重要的研究發現，不代表系統有誤。")
+                        st.markdown("---")
+                        st.subheader("策略版本完整比較")
+                        st.caption("比較 V1原版、V1+固定停利25%、V1+移動停損20%、Buy&Hold 四種版本的完整績效指標")
+
+                        with st.spinner("正在計算完整比較表..."):
+                            v1_eq_result = run_backtest_v1_with_equity_curve(v1_stock_df)
+                            v1_eq_risk = calculate_risk_metrics(v1_eq_result["equity_curve"])
+                            v1_eq_perf = calculate_performance_metrics(
+                                v1_eq_result["trades"], v1_eq_result["initial_capital"],
+                                v1_eq_result["final_value"], v1_stock_df
+                            )
+                            row_v1 = build_comparison_row(symbol, "V1", v1_eq_result, v1_eq_risk, v1_eq_perf)
+
+                            tp_result = run_backtest_v1_with_takeprofit_v2(v1_stock_df, take_profit_pct=25.0)
+                            tp_perf = calculate_performance_metrics(
+                                tp_result["trades"], tp_result["initial_capital"],
+                                tp_result["final_value"], v1_stock_df
+                            )
+                            row_tp = build_comparison_row(symbol, "V1+TakeProfit25", tp_result, None, tp_perf)
+
+                            trail_result = run_backtest_v1_with_trailing_exit(v1_stock_df, trailing_pct=20.0)
+                            trail_perf = calculate_performance_metrics(
+                                trail_result["trades"], trail_result["initial_capital"],
+                                trail_result["final_value"], v1_stock_df
+                            )
+                            row_trail = build_comparison_row(symbol, "V1+Trailing20", trail_result, None, trail_perf)
+
+                            row_bh = build_comparison_row(symbol, "Buy&Hold", bh_result, None, None)
+
+                            comparison_df = pd.DataFrame([row_v1, row_tp, row_trail, row_bh])
+
+                        st.dataframe(comparison_df, use_container_width=True)
+                        st.caption("Volatility/Sharpe/Sortino/MaxDD顯示為空白的策略，代表該版本目前尚未實作逐日權益曲線，這是已知的功能限制，非計算錯誤。")
+
+                        st.markdown("---")
+                        st.subheader("市場狀態分析")
+                        st.caption("依據 SPY 與 BTC 各自的200日均線趨勢，將市場分為 Risk-On／Risk-Off／Mixed 三種狀態（規則未依歷史績效校準）")
+
+                        with st.spinner("正在分析市場狀態..."):
+                            regime_df = build_regime_series(period="2y")
+
+                        regime_counts = regime_df["regime"].value_counts()
+                        col7, col8, col9 = st.columns(3)
+                        col7.metric("Risk-On 天數", regime_counts.get("Risk-On", 0))
+                        col8.metric("Risk-Off 天數", regime_counts.get("Risk-Off", 0))
+                        col9.metric("Mixed 天數", regime_counts.get("Mixed", 0))
+
+                        st.caption("⚠️ 完整方法論說明與研究誠信聲明，請參見專案根目錄 RESEARCH_FINDINGS.md")
 
 st.markdown("---")
 st.header("📊 歷史預測回顧")
