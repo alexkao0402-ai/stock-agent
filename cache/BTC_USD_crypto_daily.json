@@ -1,5 +1,5 @@
 {
-  "cached_at": "2026-08-23T14:01:32.376408",
+  "cached_at": "2026-08-24T14:19:24.202281",
   "data": {
     "Meta Data": {
       "1. Information": "Daily Prices and Volumes for Digital Currency",
@@ -7,16 +7,23 @@
       "3. Digital Currency Name": "Bitcoin",
       "4. Market Code": "USD",
       "5. Market Name": "United States Dollar",
-      "6. Last Refreshed": "2026-08-23 00:00:00",
+      "6. Last Refreshed": "2026-08-24 00:00:00",
       "7. Time Zone": "UTC"
     },
     "Time Series (Digital Currency Daily)": {
+      "2026-08-24": {
+        "1. open": "77729.36000000",
+        "2. high": "77748.46000000",
+        "3. low": "77257.00000000",
+        "4. close": "77365.19000000",
+        "5. volume": "129.48245028"
+      },
       "2026-08-23": {
         "1. open": "77054.44000000",
-        "2. high": "77249.64000000",
-        "3. low": "76888.90000000",
-        "4. close": "77235.65000000",
-        "5. volume": "124.21525806"
+        "2. high": "78055.25000000",
+        "3. low": "75538.12000000",
+        "4. close": "77729.36000000",
+        "5. volume": "4600.67451175"
       },
       "2026-08-22": {
         "1. open": "78325.54000000",
