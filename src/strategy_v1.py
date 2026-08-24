@@ -931,6 +931,35 @@ def calculate_risk_metrics(equity_df):
         )
     }
 
+def build_comparison_row(symbol, strategy_name, backtest_result, risk_metrics, performance_metrics):
+    """
+    把一次回測的所有結果，統整成「策略比較表」需要的一整排標準化欄位。
+    確保不同策略、不同股票的結果，都用同樣的欄位格式呈現，方便公平比較。
+
+    symbol: 股票代號
+    strategy_name: 策略名稱，例如 "V1"、"V1+TakeProfit25"、"Buy&Hold"
+    backtest_result: 回測結果字典（必須包含 total_return_pct）
+    risk_metrics: calculate_risk_metrics() 產生的字典（可以是 None，例如 Buy&Hold 沒有逐日交易紀錄時）
+    performance_metrics: calculate_performance_metrics() 產生的字典（可以是 None）
+
+    回傳：一個字典，代表比較表裡的一列
+    """
+
+    row = {
+        "Stock": symbol,
+        "Strategy": strategy_name,
+        "Return_pct": backtest_result.get("total_return_pct"),
+        "CAGR_pct": performance_metrics.get("cagr_pct") if performance_metrics else None,
+        "Volatility_pct": risk_metrics.get("annualized_volatility_pct") if risk_metrics else None,
+        "Sharpe": risk_metrics.get("sharpe_ratio") if risk_metrics else None,
+        "Sortino": risk_metrics.get("sortino_ratio") if risk_metrics else None,
+        "MaxDD_pct": risk_metrics.get("max_drawdown_pct") if risk_metrics else None,
+        "WinRate_pct": performance_metrics.get("win_rate_pct") if performance_metrics else None,
+        "ProfitFactor": performance_metrics.get("profit_factor") if performance_metrics else None,
+        "Trades": performance_metrics.get("number_of_completed_trades") if performance_metrics else backtest_result.get("number_of_trades", 0)
+    }
+    return row
+
 def calculate_buy_and_hold(df, initial_capital=10000):
     """
     計算「從資料第一天就買進，一路持有到最後一天」的績效，作為比較基準。
