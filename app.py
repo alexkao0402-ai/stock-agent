@@ -25,12 +25,18 @@ from src.regime_analysis import build_regime_series
 st.set_page_config(page_title="AI 股票研究助理", page_icon="📈")
 
 st.title("📈 AI 股票研究助理")
-st.write("輸入股票代號，取得歷史股價、新聞分析與 AI 研究報告。")
+st.markdown("##### 系統化股票研究工具｜AI分析 × 量化策略回測")
 st.caption("本工具僅供教育與研究用途，所有內容皆非投資建議。")
+st.divider()
 
-symbol_input = st.text_input("請輸入股票代號", placeholder="例如 BTDR")
+with st.container(border=True):
+    col_input, col_button = st.columns([3, 1])
+    with col_input:
+        symbol_input = st.text_input("請輸入股票代號", placeholder="例如 BTDR", label_visibility="collapsed")
+    with col_button:
+        analyze_clicked = st.button("🔍 開始分析", use_container_width=True, type="primary")
 
-if st.button("開始分析"):
+if analyze_clicked:
     if not symbol_input.strip():
         st.warning("請先輸入股票代號。")
     else:
@@ -43,20 +49,20 @@ if st.button("開始分析"):
             st.error("抓取股價資料失敗，請確認股票代號是否正確，或稍後再試。")
         else:
             df = clean_stock_data(raw_data)
-            st.success(f"成功取得 {len(df)} 筆股價資料，時間範圍：{df['date'].iloc[0]} ~ {df['date'].iloc[-1]}")
 
             with st.spinner(f"正在抓取 {symbol} 的相關新聞..."):
                 time.sleep(15)
                 news_list = get_news_sentiment(symbol, limit=20)
-            st.success(f"成功取得 {len(news_list)} 則新聞")
 
             with st.spinner(f"正在抓取 {symbol} 的公司基本面資料..."):
                 time.sleep(15)
                 overview = get_company_overview(symbol)
-            if overview:
-                st.success("成功取得公司基本面資料")
-            else:
-                st.info("未取得公司基本面資料，報告將僅根據股價與新聞進行分析")
+
+            # 用三個並排的小卡片，一次呈現資料收集的完整結果，比連續三則訊息更精簡有層次
+            status_col1, status_col2, status_col3 = st.columns(3)
+            status_col1.metric("股價資料", f"{len(df)} 筆", f"{df['date'].iloc[0]} 起")
+            status_col2.metric("相關新聞", f"{len(news_list)} 則")
+            status_col3.metric("基本面資料", "已取得" if overview else "無資料")
 
             with st.spinner("正在請 AI 分析資料，請稍候（約需 30 秒到 1 分鐘）..."):
                 report = generate_report(symbol, df, news_list, overview)
@@ -74,8 +80,12 @@ if st.button("開始分析"):
             # 建立七個分頁
             tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📄 AI 研究報告", "📈 原始股價資料", "📰 新聞列表", "🏢 公司基本面", "🔢 結構化數據", "📉 均線策略回測", "🎯 Strategy V1"])
             with tab1:
-                chart_data = df.set_index("date")[["close"]]
-                st.line_chart(chart_data)
+                with st.container(border=True):
+                    st.markdown("**股價走勢**")
+                    chart_data = df.set_index("date")[["close"]]
+                    st.line_chart(chart_data)
+
+                st.markdown("")  # 加一點垂直間距
                 st.markdown(report)
 
             with tab2:
