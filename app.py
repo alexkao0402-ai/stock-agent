@@ -1,6 +1,9 @@
 """Streamlit interface for AI-assisted large-cap equity research."""
 
+import base64
+import html
 import re
+from pathlib import Path
 import pandas as pd
 import streamlit as st
 
@@ -32,6 +35,15 @@ LARGE_CAP_UNIVERSE = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "AVGO", "
 CONFIG = BacktestConfig(commission_rate=0.001, slippage_rate=0.0005)
 
 
+def asset_data_uri(filename):
+    """Embed a local visual asset so it also works when Streamlit is deployed."""
+    path = Path(__file__).parent / "assets" / filename
+    if not path.exists():
+        return ""
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
 def format_price_range(low, high):
     """Use one currency marker so Streamlit does not parse the range as LaTeX."""
     if low is None or high is None:
@@ -53,18 +65,32 @@ def extract_scenario_report(report_text, scenario):
 
 
 st.set_page_config(page_title="AI Stock Research", page_icon="📈", layout="wide")
+background_uri = asset_data_uri("metal-dashboard-background.png")
 st.markdown(
-    """
+    f"""
     <style>
-    header[data-testid="stHeader"] {display: none;}
-    .block-container {max-width: 1120px; padding-top: 2rem; padding-bottom: 4rem;}
-    .hero {padding: 1.2rem 0 1.5rem;}
-    .hero h1 {font-size: 2rem; margin: 0; letter-spacing: -.03em;}
-    .hero p {color: #8b95a7; margin: .35rem 0 0;}
-    div[data-testid="stMetric"] {border: 1px solid rgba(128,128,128,.22); border-radius: 12px; padding: 1rem;}
-    div[data-testid="stTabs"] button {font-weight: 600;}
-    div[data-testid="stDataFrame"] {border: 1px solid rgba(128,128,128,.18); border-radius: 10px; overflow: hidden;}
-    .section-note {color: #8b95a7; font-size: .9rem; margin-top: -.5rem;}
+    header[data-testid="stHeader"] {{display: none;}}
+    .stApp {{background: linear-gradient(180deg, rgba(5,8,12,.76), rgba(5,8,12,.94)), url("{background_uri}") center top / cover fixed;}}
+    .block-container {{max-width: 1180px; padding: 2rem 2rem 4rem; background: rgba(7,10,15,.84); border-left: 1px solid rgba(190,203,220,.14); border-right: 1px solid rgba(190,203,220,.14); box-shadow: 0 0 60px rgba(0,0,0,.42); backdrop-filter: blur(16px);}}
+    .hero {{padding: 1.2rem 0 1.5rem;}}
+    .hero h1 {{font-size: 2rem; margin: 0; letter-spacing: -.03em; color: #f4f7fb;}}
+    .hero p {{color: #aeb8c8; margin: .35rem 0 0;}}
+    div[data-testid="stMetric"] {{border: 1px solid rgba(190,203,220,.22); border-radius: 14px; padding: 1rem; background: linear-gradient(145deg, rgba(37,43,53,.78), rgba(12,16,23,.9)); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 12px 30px rgba(0,0,0,.2);}}
+    div[data-testid="stMetricValue"] {{font-size: clamp(1.4rem, 3vw, 2.2rem);}}
+    div[data-testid="stTabs"] button {{font-weight: 600;}}
+    div[data-testid="stDataFrame"] {{border: 1px solid rgba(128,128,128,.18); border-radius: 10px; overflow: hidden;}}
+    .section-note {{color: #8b95a7; font-size: .9rem; margin-top: -.5rem;}}
+    .quote-strip {{display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding: 1.35rem 1.5rem; margin: .75rem 0 1.25rem; border: 1px solid rgba(205,216,230,.28); border-radius: 16px; background: linear-gradient(110deg, rgba(43,50,61,.88), rgba(11,15,22,.94) 58%, rgba(29,38,49,.86)); box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 18px 40px rgba(0,0,0,.28);}}
+    .quote-company {{font-size: 1.5rem; font-weight: 700; color: #f5f7fa;}}
+    .quote-industry {{margin-top: .25rem; color: #9da9ba; font-size: .84rem; letter-spacing: .08em; text-transform: uppercase;}}
+    .quote-market {{display: flex; align-items: center; gap: 1.25rem; white-space: nowrap;}}
+    .quote-label {{font-size: .75rem; color: #95a1b2; letter-spacing: .08em;}}
+    .quote-price {{font-size: 2rem; font-weight: 650; line-height: 1.15; color: #f5f7fa;}}
+    .quote-change {{padding: .45rem .75rem; border-radius: 999px; font-weight: 650;}}
+    .quote-up {{color: #72e6a4; background: rgba(26,121,76,.28);}}
+    .quote-down {{color: #ff8d91; background: rgba(154,48,55,.28);}}
+    .stButton > button[kind="primary"] {{background: linear-gradient(135deg, #d8dee7, #788596) !important; color: #090c11 !important; border: 1px solid rgba(255,255,255,.42) !important; font-weight: 700; box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 8px 24px rgba(0,0,0,.28);}}
+    @media (max-width: 720px) {{.block-container {{padding: 1rem 1rem 3rem;}} .quote-strip {{align-items: flex-start; flex-direction: column; gap: 1rem;}} .quote-market {{width: 100%; justify-content: space-between;}} .quote-price {{font-size: 1.75rem;}}}}
     </style>
     <div class="hero">
       <h1>AI Stock Research</h1>
@@ -150,12 +176,27 @@ if analysis_payload:
     company_name = overview.get("公司名稱", symbol) if overview else symbol
     previous_close = float(short_df["close"].iloc[-2]) if len(short_df) > 1 else current_price
     daily_change = current_price / previous_close - 1 if previous_close else 0.0
-    name_col, price_col = st.columns([4, 1])
-    with name_col:
-        st.subheader(f"{symbol} · {company_name}")
-        st.caption(overview.get("產業別", "大型股研究") if overview else "大型股研究")
-    with price_col:
-        st.metric("最新收盤", f"${current_price:,.2f}", f"{daily_change:+.2%}")
+    industry = overview.get("產業別", "大型股研究") if overview else "大型股研究"
+    change_class = "quote-up" if daily_change >= 0 else "quote-down"
+    change_arrow = "↑" if daily_change >= 0 else "↓"
+    st.markdown(
+        f"""
+        <div class="quote-strip">
+          <div>
+            <div class="quote-company">{html.escape(symbol)} · {html.escape(str(company_name))}</div>
+            <div class="quote-industry">{html.escape(str(industry))}</div>
+          </div>
+          <div class="quote-market">
+            <div>
+              <div class="quote-label">最新收盤</div>
+              <div class="quote-price">${current_price:,.2f}</div>
+            </div>
+            <div class="quote-change {change_class}">{change_arrow} {abs(daily_change):.2%}</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     tab_overview, tab_strategy, tab_data = st.tabs(["投資摘要", "策略回測", "公司資料"])
 
     with tab_overview:
@@ -266,8 +307,6 @@ if analysis_payload:
                     f"已驗證：實際報酬 {record.get('actual_return_pct', '—')}% · "
                     f"落在 {str(record.get('which_scenario_occurred', '—')).upper()} 情境"
                 )
-            with st.expander("查看這筆完整報告"):
-                st.markdown(str(record.get("full_report_text", "沒有報告內容")).replace("\\n", "\n"))
             if not record.get("outcome_checked") and st.button("驗證目前股價"):
                 latest_raw = get_daily_stock_data(record["ticker"])
                 if "Time Series (Daily)" in latest_raw:
