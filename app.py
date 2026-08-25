@@ -16,7 +16,6 @@ from src.stock_data import (
 )
 from src.ai_analysis import generate_report, extract_structured_data
 from src.prediction_tracker import save_prediction, list_predictions, check_prediction_outcome
-from src.strategy import add_moving_averages, add_signals, run_backtest
 from src.strategy_v1 import (
     add_trend_filter,
     add_momentum,

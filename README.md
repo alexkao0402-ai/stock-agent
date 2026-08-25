@@ -1,20 +1,41 @@
-# Stock Agent — AI 股票研究助理
+# AI Stock Research
 
-這是一個學習型專案，目標是打造一個 AI 驅動的股票研究代理人（AI Research Agent）。
-本專案僅用於教育與研究目的，**不會**執行任何交易，也不會連接券商帳戶。
+A research-focused Python project combining market data, AI-assisted company analysis, prediction tracking, quantitative backtesting, market-regime analysis, and rolling robustness checks.
 
-## 目前功能
+> For education and research only. This project does not execute trades or connect to brokerage accounts.
 
-輸入一支股票代號，系統會：
-1. 從 Alpha Vantage 抓取過去約 100 個交易日的歷史股價（開高低收、成交量）
-2. 抓取相關新聞與 AI 情緒分析標籤
-3. 用 pandas 清理成結構化表格
-4. 交給 Claude AI 進行綜合分析，產出：
-   - **歷史回顧**：走勢分析、關鍵波動點、成交量異常、新聞事件對應
-   - **未來情境推估**：Bull / Base / Bear 三種情境，附粗略價格區間與觸發條件
-   - **參考價位區間**：潛在進場區、停利區、論點失效價位
-5. 提供兩種操作介面：
-   - **命令列版本**（`main.py`）：純文字輸出
-   - **網頁版本**（`app.py`）：Streamlit 網頁介面，含股價走勢圖表與分頁排版
+## Project layout
 
-## 專案結構
+- `app.py` — Streamlit user interface
+- `main.py` — command-line AI research flow
+- `src/` — application and research modules
+- `experiments/` — isolated research experiments
+- `docs/` — research findings
+- `legacy/` — superseded code kept for reference
+
+See `PROJECT_STRUCTURE.md` for details.
+
+## Setup
+
+```powershell
+python -m venv venv
+venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+```
+
+Add your own API keys to `.env`, then run:
+
+```powershell
+streamlit run app.py
+```
+
+Or use the command-line entry point:
+
+```powershell
+python main.py
+```
+
+## Research integrity
+
+Strategy V1 remains a baseline implementation. Signals are designed around next-session execution to reduce same-day execution bias. Existing research limitations, including OHLC path ambiguity and the distinction between rolling robustness checks and true train/test walk-forward optimization, are documented for future work.
