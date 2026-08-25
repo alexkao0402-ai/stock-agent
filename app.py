@@ -460,8 +460,40 @@ if analysis_payload:
                     use_container_width=True,
                     config={"scrollZoom": True, "displaylogo": False, "responsive": True},
                 )
-                portfolio_metrics = pd.DataFrame([calculate_equity_metrics(item) for item in portfolio_results])
-                st.dataframe(portfolio_metrics.round(2), use_container_width=True, hide_index=True)
+                metric_rows = [calculate_equity_metrics(item) for item in portfolio_results]
+                cross_metrics, equal_metrics = metric_rows
+                return_gap = cross_metrics["Total Return %"] - equal_metrics["Total Return %"]
+                if return_gap > 0:
+                    st.success(f"結論：大型股排名策略跑贏全部股票等權持有 {return_gap:.1f} 個百分點。")
+                else:
+                    st.warning(f"結論：大型股排名策略跑輸全部股票等權持有 {abs(return_gap):.1f} 個百分點，目前沒有證明排名能增加報酬。")
+
+                result_labels = [
+                    ("大型股排名策略", "每月只持有動能排名前 20% 的股票", cross_metrics),
+                    ("全部股票等權持有", "把資金平均放進全部大型股，作為簡單基準", equal_metrics),
+                ]
+                for title, description, metrics in result_labels:
+                    with st.container(border=True):
+                        st.markdown(f"#### {title}")
+                        st.caption(description)
+                        value_col, return_col, drawdown_col, sharpe_col = st.columns(4)
+                        value_col.metric("$10,000 最後變成", f"${metrics['Final Value']:,.0f}")
+                        return_col.metric("總共賺／賠", f"{metrics['Total Return %']:+.1f}%")
+                        drawdown_col.metric("期間最慘跌幅", f"{metrics['Max Drawdown %']:.1f}%")
+                        sharpe_col.metric("風險效率", f"{metrics['Sharpe']:.2f}")
+
+                with st.expander("這些數字怎麼看？"):
+                    st.markdown(
+                        """
+                        - **$10,000 最後變成**：最直覺的最終資產比較。
+                        - **總共賺／賠**：整段回測期間的累積報酬，不是每年報酬。
+                        - **期間最慘跌幅**：從高點往下最多曾跌多少；越接近 0，承受的下跌越小。
+                        - **風險效率（Sharpe）**：每承擔一份波動換到多少報酬，通常越高越好，但不能單獨判斷策略。
+                        """
+                    )
+                with st.expander("研究細節"):
+                    st.write(f"排名策略交易筆數：{cross_metrics['Transactions']}")
+                    st.caption("等權持有是基準組合，因此不把初始建倉列為策略換手次數。")
 
     with tab_data:
         st.subheader("公司基本面")
