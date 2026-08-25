@@ -7,7 +7,12 @@ import streamlit as st
 from src.ai_analysis import extract_structured_data, generate_report
 from src.backtest_engine import BacktestConfig, run_backtest, run_buy_and_hold
 from src.performance import calculate_metrics
-from src.prediction_tracker import check_prediction_outcome, list_predictions, save_prediction
+from src.prediction_tracker import (
+    check_prediction_outcome,
+    get_recent_prediction,
+    list_predictions,
+    save_prediction,
+)
 from src.regime_analysis import build_regime_series
 from src.stock_data import (
     clean_stock_data,
@@ -100,10 +105,22 @@ if analyze_clicked:
             overview = get_company_overview(symbol)
 
             current_price = float(short_df["close"].iloc[-1])
-            st.write("產生 AI 情境分析…")
-            report = generate_report(symbol, short_df, news, overview)
-            structured = extract_structured_data(symbol, current_price, report)
-            saved_path = save_prediction(symbol, current_price, structured, report)
+            recent_prediction = get_recent_prediction(symbol, max_age_hours=12)
+            if recent_prediction:
+                st.write("載入 12 小時內的 AI 分析快取…")
+                report = recent_prediction["full_report_text"]
+                structured_keys = (
+                    "current_price", "bull_low", "bull_high", "base_low", "base_high",
+                    "bear_low", "bear_high", "entry_zone_low", "entry_zone_high",
+                    "take_profit_low", "take_profit_high", "invalidation_down", "invalidation_up",
+                )
+                structured = {key: recent_prediction.get(key) for key in structured_keys}
+                saved_path = recent_prediction["_filepath"]
+            else:
+                st.write("產生 AI 情境分析…")
+                report = generate_report(symbol, short_df, news, overview)
+                structured = extract_structured_data(symbol, current_price, report)
+                saved_path = save_prediction(symbol, current_price, structured, report)
 
             analysis_payload = {
                 "symbol": symbol,

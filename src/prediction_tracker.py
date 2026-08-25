@@ -4,7 +4,7 @@
 
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # 所有預測紀錄會存放在這個資料夾裡
 PREDICTIONS_DIR = "predictions"
@@ -93,6 +93,22 @@ def list_predictions(symbol=None):
             records.append(record)
 
     return records
+
+
+def get_recent_prediction(symbol, max_age_hours=12):
+    """Return the newest reusable analysis record within the requested age."""
+    records = list_predictions(symbol)
+    if not records:
+        return None
+    records.sort(key=lambda record: record.get("timestamp", ""), reverse=True)
+    newest = records[0]
+    try:
+        created_at = datetime.fromisoformat(newest["timestamp"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if datetime.now() - created_at > timedelta(hours=max_age_hours):
+        return None
+    return newest
 
 def classify_scenario(actual_price, record):
     """

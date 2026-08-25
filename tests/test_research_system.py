@@ -2,6 +2,7 @@ import unittest
 
 import pandas as pd
 
+from src.ai_analysis import extract_structured_data
 from src.backtest_engine import BacktestConfig, run_backtest
 from src.indicators import add_moving_averages, add_relative_strength
 from src.performance import calculate_metrics, completed_round_trips
@@ -22,6 +23,16 @@ def frame(size=220, start="2020-01-01", price=100.0):
 
 
 class ResearchSystemTests(unittest.TestCase):
+    def test_embedded_json_avoids_second_ai_extraction(self):
+        report = """<!--STRUCTURED_JSON
+{"current_price": 100, "bull_low": 120, "bull_high": 130}
+-->
+# Report
+"""
+        result = extract_structured_data("TEST", 100, report)
+        self.assertEqual(result["bull_low"], 120)
+        self.assertEqual(result["bull_high"], 130)
+
     def test_indicators_do_not_change_when_future_row_is_appended(self):
         original = frame(220)
         before = add_moving_averages(original)
