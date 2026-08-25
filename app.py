@@ -1,5 +1,6 @@
 """Streamlit interface for AI-assisted large-cap equity research."""
 
+import re
 import time
 
 import pandas as pd
@@ -26,6 +27,26 @@ from src.strategies import (
 
 LARGE_CAP_UNIVERSE = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "AVGO", "JPM", "V", "WMT"]
 CONFIG = BacktestConfig(commission_rate=0.001, slippage_rate=0.0005)
+
+
+def format_price_range(low, high):
+    """Use one currency marker so Streamlit does not parse the range as LaTeX."""
+    if low is None or high is None:
+        return "—"
+    return f"${low:,.2f}–{high:,.2f}"
+
+
+def extract_scenario_report(report_text, scenario):
+    """Return only the selected Bull/Base/Bear section from the AI report."""
+    normalized = str(report_text).replace("\\n", "\n")
+    labels = {
+        "中性": r"Base Case|中性情境",
+        "樂觀": r"Bull Case|樂觀情境",
+        "悲觀": r"Bear Case|悲觀情境",
+    }
+    pattern = rf"(?ims)^###\s*(?:{labels[scenario]})[^\n]*\n(.*?)(?=^###\s|^##\s|\Z)"
+    match = re.search(pattern, normalized)
+    return match.group(1).strip() if match else "這份報告沒有可分離的情境段落，請查看完整 AI 分析。"
 
 
 st.set_page_config(page_title="AI Stock Research", page_icon="📈", layout="wide")
@@ -117,8 +138,8 @@ if analysis_payload:
         st.line_chart(short_df.set_index("date")[["close"]], height=380)
 
         entry, target, risk = st.columns(3)
-        entry.metric("參考進場", f"${structured.get('entry_zone_low', '—')} – ${structured.get('entry_zone_high', '—')}")
-        target.metric("參考目標", f"${structured.get('take_profit_low', '—')} – ${structured.get('take_profit_high', '—')}")
+        entry.metric("參考進場", format_price_range(structured.get("entry_zone_low"), structured.get("entry_zone_high")))
+        target.metric("參考停利", format_price_range(structured.get("take_profit_low"), structured.get("take_profit_high")))
         risk.metric("風險失效價", f"${structured.get('invalidation_down', '—')}")
 
         st.markdown("#### AI 情境")
@@ -129,14 +150,18 @@ if analysis_payload:
             label_visibility="collapsed",
         )
         scenario_fields = {
-            "中性": ("base_low", "base_high", "目前資訊下的主要參考區間"),
-            "樂觀": ("bull_low", "bull_high", "成長與市場條件優於預期時"),
-            "悲觀": ("bear_low", "bear_high", "需求或市場環境轉弱時"),
+            "中性": ("base_low", "base_high"),
+            "樂觀": ("bull_low", "bull_high"),
+            "悲觀": ("bear_low", "bear_high"),
         }
-        low_key, high_key, scenario_note = scenario_fields[scenario or "中性"]
-        scenario_col, note_col = st.columns([1, 3])
-        scenario_col.metric(f"{scenario or '中性'}區間", f"${structured.get(low_key, '—')} – ${structured.get(high_key, '—')}")
-        note_col.info(scenario_note)
+        selected_scenario = scenario or "中性"
+        low_key, high_key = scenario_fields[selected_scenario]
+        st.metric(
+            f"{selected_scenario}情境可能區間",
+            format_price_range(structured.get(low_key), structured.get(high_key)),
+        )
+        with st.container(border=True):
+            st.markdown(extract_scenario_report(report, selected_scenario))
 
         with st.expander("完整 AI 分析"):
             st.markdown(str(report).replace("\\n", "\n"))
@@ -209,9 +234,9 @@ if analysis_payload:
             record = predictions[index]
             h1, h2, h3, h4 = st.columns(4)
             h1.metric("預測時股價", f"${record.get('current_price_at_prediction', '—')}")
-            h2.metric("樂觀區間", f"${record.get('bull_low', '—')} – ${record.get('bull_high', '—')}")
-            h3.metric("中性區間", f"${record.get('base_low', '—')} – ${record.get('base_high', '—')}")
-            h4.metric("悲觀區間", f"${record.get('bear_low', '—')} – ${record.get('bear_high', '—')}")
+            h2.metric("樂觀區間", format_price_range(record.get("bull_low"), record.get("bull_high")))
+            h3.metric("中性區間", format_price_range(record.get("base_low"), record.get("base_high")))
+            h4.metric("悲觀區間", format_price_range(record.get("bear_low"), record.get("bear_high")))
             if record.get("outcome_checked"):
                 st.success(
                     f"已驗證：實際報酬 {record.get('actual_return_pct', '—')}% · "
