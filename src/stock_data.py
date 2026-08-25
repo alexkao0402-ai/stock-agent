@@ -163,38 +163,6 @@ def get_company_overview(symbol):
 
     return overview
 
-def get_crypto_daily_data(symbol="BTC", market="USD"):
-    """
-    向 Alpha Vantage 要某個加密貨幣的每日價格資料。
-    優先使用快取，快取不存在或過期時才真正呼叫 API。
-
-    symbol: 加密貨幣代號，例如 "BTC"
-    market: 報價幣別，例如 "USD"
-    回傳：API 回應的原始資料（Python 字典格式）
-    """
-
-    cache_key = f"{symbol}_{market}_crypto_daily"
-
-    cached_data = load_from_cache(cache_key, max_age_hours=20)
-    if cached_data is not None:
-        return cached_data
-
-    url = "https://www.alphavantage.co/query"
-    params = {
-        "function": "DIGITAL_CURRENCY_DAILY",
-        "symbol": symbol,
-        "market": market,
-        "apikey": api_key
-    }
-    response = requests.get(url, params=params)
-    data = response.json()
-
-    # 確認真實測試過後，成功時的資料會包含這個 key
-    if "Time Series (Digital Currency Daily)" in data:
-        save_to_cache(cache_key, data)
-
-    return data
-
 def get_long_history_stock_data(symbol, period="2y"):
     """
     用 yfinance 抓取某支股票的長期歷史股價資料（免費，不受 Alpha Vantage 額度限制）。
@@ -263,24 +231,3 @@ if __name__ == "__main__":
             print(f"{key}：{str(value)[:100]}...")
         else:
             print(f"{key}：{value}")
-
-def clean_crypto_data(raw_data):
-    """
-    把 get_crypto_daily_data() 回傳的原始 JSON，轉換成乾淨的 pandas 表格。
-    raw_data: get_crypto_daily_data() 回傳的字典
-    回傳：一個 pandas DataFrame，欄位為 date, open, high, low, close, volume
-    """
-    daily_data = raw_data["Time Series (Digital Currency Daily)"]
-    df = pd.DataFrame.from_dict(daily_data, orient="index")
-    df.columns = ["open", "high", "low", "close", "volume"]
-    df = df.astype({
-        "open": float,
-        "high": float,
-        "low": float,
-        "close": float,
-        "volume": float  # 加密貨幣成交量常是小數（例如 124.21 顆比特幣），不能用 int
-    })
-    df.index.name = "date"
-    df = df.reset_index()
-    df = df.sort_values("date").reset_index(drop=True)
-    return df
