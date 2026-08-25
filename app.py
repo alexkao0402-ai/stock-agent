@@ -33,9 +33,10 @@ st.title("AI Stock Research")
 st.caption("AI analysis · news · fundamentals · unbiased large-cap strategy comparison")
 
 symbol = st.text_input("Ticker", value="AAPL").strip().upper()
-analyze = st.button("Analyze", type="primary")
+analyze_clicked = st.button("Analyze", type="primary")
+analysis_payload = st.session_state.get("analysis_payload")
 
-if analyze:
+if analyze_clicked:
     if not symbol:
         st.warning("Please enter a ticker.")
         st.stop()
@@ -56,6 +57,28 @@ if analyze:
         report = generate_report(symbol, short_df, news, overview)
         structured = extract_structured_data(symbol, current_price, report)
     saved_path = save_prediction(symbol, current_price, structured, report)
+
+    analysis_payload = {
+        "symbol": symbol,
+        "short_df": short_df,
+        "news": news,
+        "overview": overview,
+        "current_price": current_price,
+        "report": report,
+        "structured": structured,
+        "saved_path": saved_path,
+    }
+    st.session_state["analysis_payload"] = analysis_payload
+
+if analysis_payload:
+    symbol = analysis_payload["symbol"]
+    short_df = analysis_payload["short_df"]
+    news = analysis_payload["news"]
+    overview = analysis_payload["overview"]
+    current_price = analysis_payload["current_price"]
+    report = analysis_payload["report"]
+    structured = analysis_payload["structured"]
+    saved_path = analysis_payload["saved_path"]
 
     st.header(f"{symbol} · {overview.get('公司名稱', symbol) if overview else symbol}")
     st.metric("Latest close", f"${current_price:,.2f}")
