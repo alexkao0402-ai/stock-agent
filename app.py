@@ -1,8 +1,6 @@
 """Streamlit interface for AI-assisted large-cap equity research."""
 
 import re
-import time
-
 import pandas as pd
 import streamlit as st
 
@@ -77,39 +75,48 @@ with search_col:
 with button_col:
     analyze_clicked = st.button("開始分析", type="primary", use_container_width=True)
 analysis_payload = st.session_state.get("analysis_payload")
+analysis_cache = st.session_state.setdefault("analysis_cache", {})
 
 if analyze_clicked:
     if not symbol:
         st.warning("Please enter a ticker.")
         st.stop()
 
-    raw_data = get_daily_stock_data(symbol)
-    if "Time Series (Daily)" not in raw_data:
-        st.error("Price data could not be loaded. Check the ticker or API status.")
-        st.stop()
-    short_df = clean_stock_data(raw_data)
+    if symbol in analysis_cache:
+        analysis_payload = analysis_cache[symbol]
+        st.toast("已載入本次工作階段的分析快取")
+    else:
+        with st.status(f"正在分析 {symbol}", expanded=True) as status:
+            st.write("取得股價資料…")
+            raw_data = get_daily_stock_data(symbol)
+            if "Time Series (Daily)" not in raw_data:
+                status.update(label="股價資料載入失敗", state="error")
+                st.error("Price data could not be loaded. Check the ticker or API status.")
+                st.stop()
+            short_df = clean_stock_data(raw_data)
 
-    with st.spinner("Loading news and fundamentals..."):
-        news = get_news_sentiment(symbol, limit=20)
-        time.sleep(15)
-        overview = get_company_overview(symbol)
+            st.write("取得新聞與基本面…")
+            news = get_news_sentiment(symbol, limit=20)
+            overview = get_company_overview(symbol)
 
-    current_price = float(short_df["close"].iloc[-1])
-    with st.spinner("Generating AI research report..."):
-        report = generate_report(symbol, short_df, news, overview)
-        structured = extract_structured_data(symbol, current_price, report)
-    saved_path = save_prediction(symbol, current_price, structured, report)
+            current_price = float(short_df["close"].iloc[-1])
+            st.write("產生 AI 情境分析…")
+            report = generate_report(symbol, short_df, news, overview)
+            structured = extract_structured_data(symbol, current_price, report)
+            saved_path = save_prediction(symbol, current_price, structured, report)
 
-    analysis_payload = {
-        "symbol": symbol,
-        "short_df": short_df,
-        "news": news,
-        "overview": overview,
-        "current_price": current_price,
-        "report": report,
-        "structured": structured,
-        "saved_path": saved_path,
-    }
+            analysis_payload = {
+                "symbol": symbol,
+                "short_df": short_df,
+                "news": news,
+                "overview": overview,
+                "current_price": current_price,
+                "report": report,
+                "structured": structured,
+                "saved_path": saved_path,
+            }
+            analysis_cache[symbol] = analysis_payload
+            status.update(label="分析完成", state="complete", expanded=False)
     st.session_state["analysis_payload"] = analysis_payload
 
 if analysis_payload:

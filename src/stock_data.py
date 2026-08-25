@@ -37,7 +37,7 @@ def get_daily_stock_data(symbol, outputsize="compact"):
         "outputsize": outputsize,
         "apikey": api_key
     }
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=20)
     data = response.json()
 
     if "Time Series (Daily)" in data:
@@ -92,7 +92,7 @@ def get_news_sentiment(symbol, limit=20):
         "limit": limit,
         "apikey": api_key
     }
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=20)
     data = response.json()
 
     if "feed" not in data:
@@ -137,7 +137,7 @@ def get_company_overview(symbol):
         "symbol": symbol,
         "apikey": api_key
     }
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=20)
     data = response.json()
 
     if not data or "Symbol" not in data:
