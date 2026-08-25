@@ -12,6 +12,7 @@ from src.backtest_engine import BacktestConfig, run_backtest, run_buy_and_hold
 from src.performance import calculate_metrics
 from src.prediction_tracker import (
     check_prediction_outcome,
+    enrich_prediction,
     get_recent_prediction,
     list_predictions,
     save_prediction,
@@ -98,6 +99,12 @@ st.markdown(
     </div>
     """,
     unsafe_allow_html=True,
+)
+from src.strategy_validation import (
+    current_signal,
+    equity_comparison,
+    fixed_horizon_validation,
+    strategy_scorecard,
 )
 
 search_col, button_col = st.columns([5, 1])
@@ -237,10 +244,8 @@ if analysis_payload:
                 st.caption(f"{item['time_published']} · {item['source']} · {item['overall_sentiment_label']}")
 
     with tab_strategy:
-        st.subheader("大型股策略比較")
-        st.caption(
-            "三種策略使用相同資料、成本與隔日開盤成交規則，方便公平比較。"
-        )
+        st.subheader("策略現在怎麼看")
+        st.caption("訊號於收盤後確認；BUY／SELL 會在下一個交易日開盤執行。")
         if symbol not in LARGE_CAP_UNIVERSE:
             st.info("Manual tickers are supported, but the fixed research universe is: " + ", ".join(LARGE_CAP_UNIVERSE))
 
@@ -257,18 +262,54 @@ if analysis_payload:
             results = []
             for name, frame in prepared.items():
                 results.append(run_backtest(frame, symbol, name, CONFIG))
-            results.append(run_buy_and_hold(stock_df, symbol, CONFIG))
-            comparison = pd.DataFrame([calculate_metrics(result) for result in results])
+            buy_hold_result = run_buy_and_hold(stock_df, symbol, CONFIG)
+            spy_result = run_buy_and_hold(spy_df, "SPY", CONFIG)
+            spy_result["strategy"] = "SPY"
+            all_results = results + [buy_hold_result, spy_result]
+
+            signal_rows = [
+                current_signal(name, prepared[name], result)
+                for (name, result) in zip(prepared, results)
+            ]
+            signal_labels = {"BUY": "🟢 BUY", "HOLD": "🟢 HOLD", "SELL": "🔴 SELL", "WAIT": "⚪ WAIT"}
+            signal_table = pd.DataFrame([
+                {
+                    "策略": row["strategy"],
+                    "目前訊號": signal_labels[row["signal"]],
+                    "理由": row["reason"],
+                }
+                for row in signal_rows
+            ])
+            st.dataframe(signal_table, use_container_width=True, hide_index=True)
+
+            saved_record = enrich_prediction(saved_path, strategy_signals=signal_rows)
+            validations = fixed_horizon_validation(saved_record, stock_df, spy_df, results)
+            if validations:
+                enrich_prediction(saved_path, strategy_validation=validations)
+
+            st.subheader("如果一開始投入 $10,000，現在剩多少？")
+            st.caption("所有策略、股票持有與 SPY 使用相同起始資金和相同日期。")
+            equity = equity_comparison(all_results)
+            if not equity.empty:
+                st.line_chart(equity.set_index("date"), height=430)
+                ending_cols = st.columns(len(all_results))
+                for col, result in zip(ending_cols, all_results):
+                    col.metric(result["strategy"] if result["symbol"] != "SPY" else "SPY", f"${result['final_value']:,.0f}")
+
+            st.subheader("風險與報酬")
+            comparison = pd.DataFrame([calculate_metrics(result) for result in all_results])
+            comparison = comparison[["Strategy", "Total Return %", "Max Drawdown %", "Sharpe", "Win Rate %", "Trades"]]
+            comparison.columns = ["策略", "總報酬 %", "最大跌幅 %", "Sharpe", "勝率 %", "交易次數"]
             st.dataframe(comparison.round(2), use_container_width=True, hide_index=True)
 
-            selected = st.selectbox("查看策略圖表", list(prepared))
-            chart_columns = ["close", "ma200"]
-            if selected == "Trend Following":
-                chart_columns.append("ma50")
-            elif selected == "Mean Reversion":
-                chart_columns.extend(["ma20", "rsi14"])
-            chart = prepared[selected].set_index("date")[chart_columns]
-            st.line_chart(chart, height=400)
+            with st.expander("查看技術指標圖（研究用途）"):
+                selected = st.selectbox("選擇策略", list(prepared))
+                chart_columns = ["close", "ma200"]
+                if selected == "Trend Following":
+                    chart_columns.append("ma50")
+                elif selected == "Mean Reversion":
+                    chart_columns.extend(["ma20", "rsi14"])
+                st.line_chart(prepared[selected].set_index("date")[chart_columns], height=360)
 
             regime = build_regime_series(period="5y")
             latest_regime = regime.dropna(subset=["regime"]).iloc[-1]
@@ -290,6 +331,15 @@ if analysis_payload:
 
         st.subheader("歷史預測")
         predictions = list_predictions()
+        scorecard_records = [record for record in predictions if record.get("strategy_validation")]
+        if scorecard_records:
+            st.markdown("#### Strategy Scorecard")
+            score_horizon = st.segmented_control("驗證期間", [5, 20, 60], default=20, format_func=lambda value: f"{value}D")
+            scorecard = strategy_scorecard(scorecard_records, score_horizon or 20)
+            if scorecard.empty:
+                st.info(f"目前尚無已成熟的 {score_horizon or 20} 個交易日驗證紀錄。")
+            else:
+                st.dataframe(scorecard.round(2), use_container_width=True, hide_index=True)
         if predictions:
             index = st.selectbox(
                 "選擇預測紀錄",
@@ -307,6 +357,34 @@ if analysis_payload:
                     f"已驗證：實際報酬 {record.get('actual_return_pct', '—')}% · "
                     f"落在 {str(record.get('which_scenario_occurred', '—')).upper()} 情境"
                 )
+            strategy_signals = record.get("strategy_signals", [])
+            if strategy_signals:
+                st.markdown("##### 當時策略訊號")
+                st.dataframe(
+                    pd.DataFrame(strategy_signals).rename(columns={"strategy": "策略", "signal": "訊號", "reason": "當時理由"}),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            validation = record.get("strategy_validation", {})
+            if validation:
+                available = sorted(validation, key=int)
+                chosen_horizon = st.segmented_control(
+                    "查看事後驗證",
+                    available,
+                    default=available[0],
+                    format_func=lambda value: f"{value}D",
+                )
+                outcome = validation[chosen_horizon or available[0]]
+                outcome_rows = []
+                for strategy_name, values in outcome.get("strategies", {}).items():
+                    outcome_rows.append({
+                        "策略": strategy_name,
+                        "策略報酬 %": values["return_pct"],
+                        "Alpha vs SPY %": values["alpha_vs_spy_pct"],
+                        "Alpha vs 股票 %": values["alpha_vs_stock_pct"],
+                    })
+                st.caption(f"{outcome['start_date']} → {outcome['end_date']} · 股票 {outcome['stock_return_pct']:+.2f}% · SPY {outcome['spy_return_pct']:+.2f}%")
+                st.dataframe(pd.DataFrame(outcome_rows), use_container_width=True, hide_index=True)
             if not record.get("outcome_checked") and st.button("驗證目前股價"):
                 latest_raw = get_daily_stock_data(record["ticker"])
                 if "Time Series (Daily)" in latest_raw:

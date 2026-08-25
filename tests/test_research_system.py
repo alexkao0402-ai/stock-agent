@@ -8,6 +8,7 @@ from src.indicators import add_moving_averages, add_relative_strength
 from src.performance import calculate_metrics, completed_round_trips
 from src.strategies.mean_reversion import mean_reversion_signals
 from src.strategies.trend import trend_following_signals
+from src.strategy_validation import fixed_horizon_validation, strategy_scorecard
 
 
 def frame(size=220, start="2020-01-01", price=100.0):
@@ -109,6 +110,25 @@ class ResearchSystemTests(unittest.TestCase):
         sell = next(t for t in result["trades"] if t["action"] == "SELL")
         self.assertEqual(sell["signal_date"], signals.loc[exit_i, "date"])
         self.assertEqual(sell["execution_date"], signals.loc[exit_i + 1, "date"])
+
+    def test_fixed_horizon_validation_uses_exact_future_trading_rows(self):
+        stock = frame(10, price=100)
+        spy = frame(10, price=200)
+        equity = pd.DataFrame({"date": stock["date"], "equity": [10_000 + i * 100 for i in range(10)]})
+        record = {"timestamp": stock.loc[2, "date"] + "T18:00:00"}
+        result = {"strategy": "Test", "equity_curve": equity}
+        validated = fixed_horizon_validation(record, stock, spy, [result], horizons=(5, 20))
+        self.assertIn("5", validated)
+        self.assertNotIn("20", validated)
+        self.assertEqual(validated["5"]["end_date"], stock.loc[7, "date"])
+
+    def test_scorecard_counts_only_matured_recorded_outcomes(self):
+        records = [{"strategy_validation": {"20": {"strategies": {
+            "Momentum": {"return_pct": 5, "alpha_vs_spy_pct": 2, "alpha_vs_stock_pct": 1}
+        }}}}]
+        scorecard = strategy_scorecard(records, 20)
+        self.assertEqual(scorecard.loc[0, "已驗證訊號"], 1)
+        self.assertEqual(scorecard.loc[0, "勝過 SPY 比率 %"], 100)
 
 
 if __name__ == "__main__":

@@ -92,7 +92,7 @@ def list_predictions(symbol=None):
             record["_filepath"] = filepath  # 順便記錄檔案路徑，方便之後更新這筆紀錄
             records.append(record)
 
-    return records
+    return sorted(records, key=lambda record: record.get("timestamp", ""), reverse=True)
 
 
 def get_recent_prediction(symbol, max_age_hours=12):
@@ -109,6 +109,21 @@ def get_recent_prediction(symbol, max_age_hours=12):
     if datetime.now() - created_at > timedelta(hours=max_age_hours):
         return None
     return newest
+
+
+def enrich_prediction(filepath, strategy_signals=None, strategy_validation=None):
+    """Append research fields while preserving the immutable original prediction."""
+    with open(filepath, "r", encoding="utf-8") as f:
+        record = json.load(f)
+    if strategy_signals is not None and not record.get("strategy_signals"):
+        record["strategy_signals"] = strategy_signals
+    if strategy_validation:
+        existing = record.setdefault("strategy_validation", {})
+        for horizon, outcome in strategy_validation.items():
+            existing.setdefault(horizon, outcome)
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(record, f, ensure_ascii=False, indent=2)
+    return record
 
 def classify_scenario(actual_price, record):
     """
