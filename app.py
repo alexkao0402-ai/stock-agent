@@ -5,6 +5,7 @@ import html
 import re
 from pathlib import Path
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from src.ai_analysis import extract_structured_data, generate_report
@@ -291,7 +292,59 @@ if analysis_payload:
             st.caption("所有策略、股票持有與 SPY 使用相同起始資金和相同日期。")
             equity = equity_comparison(all_results)
             if not equity.empty:
-                st.line_chart(equity.set_index("date"), height=430)
+                equity["date"] = pd.to_datetime(equity["date"])
+                colors = {
+                    "Trend Following": "#69e39b",
+                    "Momentum + Relative Strength": "#f2a7ae",
+                    "Mean Reversion": "#3797e8",
+                    "Buy & Hold": "#84caff",
+                    "SPY": "#ff4d57",
+                }
+                figure = go.Figure()
+                for strategy_name in equity.columns.drop("date"):
+                    figure.add_trace(go.Scatter(
+                        x=equity["date"],
+                        y=equity[strategy_name],
+                        name=strategy_name,
+                        mode="lines",
+                        line={"width": 2, "color": colors.get(strategy_name)},
+                        hovertemplate=f"<b>{strategy_name}</b><br>%{{x|%Y-%m-%d}}<br>$%{{y:,.0f}}<extra></extra>",
+                    ))
+                figure.update_layout(
+                    height=520,
+                    margin={"l": 15, "r": 15, "t": 20, "b": 10},
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(13,18,27,.72)",
+                    font={"color": "#dce3ed"},
+                    hovermode="x unified",
+                    dragmode="zoom",
+                    legend={"orientation": "h", "y": 1.03, "x": 0},
+                    yaxis={"title": "資產價值（美元）", "tickprefix": "$", "tickformat": ",.0f", "gridcolor": "rgba(170,185,205,.15)"},
+                    xaxis={
+                        "title": None,
+                        "gridcolor": "rgba(170,185,205,.08)",
+                        "rangeslider": {"visible": True, "thickness": .09},
+                        "rangeselector": {
+                            "buttons": [
+                                {"count": 6, "label": "6M", "step": "month", "stepmode": "backward"},
+                                {"count": 1, "label": "1Y", "step": "year", "stepmode": "backward"},
+                                {"count": 3, "label": "3Y", "step": "year", "stepmode": "backward"},
+                                {"step": "all", "label": "全部"},
+                            ],
+                            "bgcolor": "rgba(45,53,66,.85)",
+                            "activecolor": "#8996a8",
+                            "font": {"color": "#f4f7fb"},
+                            "x": 1,
+                            "xanchor": "right",
+                        },
+                    },
+                )
+                st.plotly_chart(
+                    figure,
+                    use_container_width=True,
+                    config={"scrollZoom": True, "displaylogo": False, "responsive": True},
+                )
+                st.caption("操作：框選放大 · 滾輪縮放 · 雙擊重設 · 底部滑桿調整時間範圍")
                 ending_cols = st.columns(len(all_results))
                 for col, result in zip(ending_cols, all_results):
                     col.metric(result["strategy"] if result["symbol"] != "SPY" else "SPY", f"${result['final_value']:,.0f}")
