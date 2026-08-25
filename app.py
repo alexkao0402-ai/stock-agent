@@ -29,11 +29,32 @@ CONFIG = BacktestConfig(commission_rate=0.001, slippage_rate=0.0005)
 
 
 st.set_page_config(page_title="AI Stock Research", page_icon="📈", layout="wide")
-st.title("AI Stock Research")
-st.caption("AI analysis · news · fundamentals · unbiased large-cap strategy comparison")
+st.markdown(
+    """
+    <style>
+    header[data-testid="stHeader"] {display: none;}
+    .block-container {max-width: 1120px; padding-top: 2rem; padding-bottom: 4rem;}
+    .hero {padding: 1.2rem 0 1.5rem;}
+    .hero h1 {font-size: 2rem; margin: 0; letter-spacing: -.03em;}
+    .hero p {color: #8b95a7; margin: .35rem 0 0;}
+    div[data-testid="stMetric"] {border: 1px solid rgba(128,128,128,.22); border-radius: 12px; padding: 1rem;}
+    div[data-testid="stTabs"] button {font-weight: 600;}
+    div[data-testid="stDataFrame"] {border: 1px solid rgba(128,128,128,.18); border-radius: 10px; overflow: hidden;}
+    .section-note {color: #8b95a7; font-size: .9rem; margin-top: -.5rem;}
+    </style>
+    <div class="hero">
+      <h1>AI Stock Research</h1>
+      <p>快速看懂公司、AI 情境與量化策略表現</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-symbol = st.text_input("Ticker", value="AAPL").strip().upper()
-analyze_clicked = st.button("Analyze", type="primary")
+search_col, button_col = st.columns([5, 1])
+with search_col:
+    symbol = st.text_input("股票代號", value="AAPL", placeholder="例如：AAPL、NVDA", label_visibility="collapsed").strip().upper()
+with button_col:
+    analyze_clicked = st.button("開始分析", type="primary", use_container_width=True)
 analysis_payload = st.session_state.get("analysis_payload")
 
 if analyze_clicked:
@@ -80,24 +101,41 @@ if analysis_payload:
     structured = analysis_payload["structured"]
     saved_path = analysis_payload["saved_path"]
 
-    st.header(f"{symbol} · {overview.get('公司名稱', symbol) if overview else symbol}")
-    st.metric("Latest close", f"${current_price:,.2f}")
-    tab_overview, tab_strategy, tab_data = st.tabs(["Overview", "Large-Cap Strategy Research", "Research & Data"])
+    structured = structured or {}
+    company_name = overview.get("公司名稱", symbol) if overview else symbol
+    st.subheader(f"{symbol} · {company_name}")
+    st.caption(f"最新資料已整理完成 · 收盤價 ${current_price:,.2f}")
+    tab_overview, tab_strategy, tab_data = st.tabs(["投資摘要", "策略回測", "公司資料"])
 
     with tab_overview:
-        st.line_chart(short_df.set_index("date")[["close"]], height=340)
-        st.subheader("AI Research Report")
-        st.markdown(report)
-        st.subheader("Recent News")
+        st.subheader("關鍵價位")
+        p1, p2, p3, p4 = st.columns(4)
+        p1.metric("目前股價", f"${current_price:,.2f}")
+        p2.metric("參考進場區", f"${structured.get('entry_zone_low', '—')} – ${structured.get('entry_zone_high', '—')}")
+        p3.metric("參考停利區", f"${structured.get('take_profit_low', '—')} – ${structured.get('take_profit_high', '—')}")
+        p4.metric("向下失效價", f"${structured.get('invalidation_down', '—')}")
+
+        st.subheader("AI 三種情境")
+        bull, base, bear = st.columns(3)
+        bull.metric("樂觀情境", f"${structured.get('bull_low', '—')} – ${structured.get('bull_high', '—')}")
+        base.metric("中性情境", f"${structured.get('base_low', '—')} – ${structured.get('base_high', '—')}")
+        bear.metric("悲觀情境", f"${structured.get('bear_low', '—')} – ${structured.get('bear_high', '—')}")
+
+        st.subheader("近期走勢")
+        st.line_chart(short_df.set_index("date")[["close"]], height=300)
+
+        with st.expander("查看完整 AI 研究報告"):
+            st.markdown(str(report).replace("\\n", "\n"))
+
+        st.subheader("近期新聞")
         for item in news[:5]:
             st.markdown(f"**{item['title']}**")
             st.caption(f"{item['time_published']} · {item['source']} · {item['overall_sentiment_label']}")
 
     with tab_strategy:
-        st.subheader("Large-Cap Strategy Research")
+        st.subheader("大型股策略比較")
         st.caption(
-            "Fixed current large-cap universe for research purposes. This creates survivorship bias. "
-            "All signals use Day T close and execute at Day T+1 open. Costs: 0.1% commission and 0.05% slippage."
+            "三種策略使用相同資料、成本與隔日開盤成交規則，方便公平比較。"
         )
         if symbol not in LARGE_CAP_UNIVERSE:
             st.info("Manual tickers are supported, but the fixed research universe is: " + ", ".join(LARGE_CAP_UNIVERSE))
@@ -119,7 +157,7 @@ if analysis_payload:
             comparison = pd.DataFrame([calculate_metrics(result) for result in results])
             st.dataframe(comparison.round(2), use_container_width=True, hide_index=True)
 
-            selected = st.selectbox("Chart strategy", list(prepared))
+            selected = st.selectbox("查看策略圖表", list(prepared))
             chart_columns = ["close", "ma200"]
             if selected == "Trend Following":
                 chart_columns.append("ma50")
@@ -130,37 +168,51 @@ if analysis_payload:
 
             regime = build_regime_series(period="5y")
             latest_regime = regime.dropna(subset=["regime"]).iloc[-1]
-            st.caption(f"Current SPY regime: {latest_regime['regime']} (SPY close vs SPY MA200)")
+            st.info(f"目前大盤狀態：{latest_regime['regime']}（SPY 收盤價相對 MA200）")
 
     with tab_data:
-        left, right = st.columns(2)
-        with left:
-            st.subheader("Company Fundamentals")
-            st.json(overview or {})
-        with right:
-            st.subheader("Structured AI Data")
-            st.json(structured or {})
-        st.caption(f"Prediction saved: {saved_path}")
-        st.dataframe(short_df.sort_values("date", ascending=False), use_container_width=True, hide_index=True)
+        st.subheader("公司基本面")
+        fundamentals = overview or {}
+        f1, f2, f3, f4 = st.columns(4)
+        f1.metric("市值", fundamentals.get("市值", "—"))
+        f2.metric("本益比", fundamentals.get("本益比", "—"))
+        f3.metric("每股盈餘", fundamentals.get("每股盈餘", "—"))
+        f4.metric("產業", fundamentals.get("產業別", "—"))
+        if fundamentals.get("公司簡介"):
+            st.write(fundamentals["公司簡介"])
 
-        st.subheader("Prediction History")
+        with st.expander("查看原始股價資料"):
+            st.dataframe(short_df.sort_values("date", ascending=False), use_container_width=True, hide_index=True)
+
+        st.subheader("歷史預測")
         predictions = list_predictions()
         if predictions:
             index = st.selectbox(
-                "Prediction",
+                "選擇預測紀錄",
                 range(len(predictions)),
                 format_func=lambda i: f"{predictions[i]['ticker']} — {predictions[i]['timestamp']}",
             )
             record = predictions[index]
-            st.json(record)
-            if not record.get("outcome_checked") and st.button("Verify current price"):
+            h1, h2, h3, h4 = st.columns(4)
+            h1.metric("預測時股價", f"${record.get('current_price_at_prediction', '—')}")
+            h2.metric("樂觀區間", f"${record.get('bull_low', '—')} – ${record.get('bull_high', '—')}")
+            h3.metric("中性區間", f"${record.get('base_low', '—')} – ${record.get('base_high', '—')}")
+            h4.metric("悲觀區間", f"${record.get('bear_low', '—')} – ${record.get('bear_high', '—')}")
+            if record.get("outcome_checked"):
+                st.success(
+                    f"已驗證：實際報酬 {record.get('actual_return_pct', '—')}% · "
+                    f"落在 {str(record.get('which_scenario_occurred', '—')).upper()} 情境"
+                )
+            with st.expander("查看這筆完整報告"):
+                st.markdown(str(record.get("full_report_text", "沒有報告內容")).replace("\\n", "\n"))
+            if not record.get("outcome_checked") and st.button("驗證目前股價"):
                 latest_raw = get_daily_stock_data(record["ticker"])
                 if "Time Series (Daily)" in latest_raw:
                     latest_price = float(clean_stock_data(latest_raw)["close"].iloc[-1])
                     check_prediction_outcome(record, latest_price)
-                    st.success("Prediction outcome updated.")
+                    st.success("預測結果已更新。")
                     st.rerun()
         else:
-            st.info("No saved predictions yet.")
+            st.info("目前沒有歷史預測。")
 
-st.caption("For education and research only. Historical results do not guarantee future performance.")
+st.caption("僅供教育與研究使用，歷史績效不代表未來表現。")
