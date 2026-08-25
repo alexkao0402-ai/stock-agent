@@ -49,3 +49,20 @@ def calculate_metrics(result: dict) -> dict:
         "Trades": len(trips),
         "Exposure %": result["exposure_pct"],
     }
+
+
+def calculate_equity_metrics(result: dict) -> dict:
+    """Metrics for portfolio engines whose trades are not single-symbol round trips."""
+    curve = result["equity_curve"].copy()
+    equity = curve["equity"].astype(float)
+    returns = equity.pct_change().dropna()
+    volatility = returns.std(ddof=0)
+    drawdown = equity / equity.cummax() - 1
+    return {
+        "Strategy": result["strategy"],
+        "Final Value": result["final_value"],
+        "Total Return %": (result["final_value"] / result["initial_capital"] - 1) * 100,
+        "Max Drawdown %": drawdown.min() * 100,
+        "Sharpe": returns.mean() / volatility * math.sqrt(252) if volatility > 0 else 0.0,
+        "Transactions": len(result.get("trades", [])),
+    }

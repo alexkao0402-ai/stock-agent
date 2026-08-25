@@ -10,7 +10,12 @@ import streamlit as st
 
 from src.ai_analysis import extract_structured_data, generate_report
 from src.backtest_engine import BacktestConfig, run_backtest, run_buy_and_hold
-from src.performance import calculate_metrics
+from src.cross_sectional import (
+    cross_sectional_momentum_backtest,
+    equal_weight_buy_and_hold,
+    latest_cross_sectional_ranking,
+)
+from src.performance import calculate_equity_metrics, calculate_metrics
 from src.prediction_tracker import (
     check_prediction_outcome,
     enrich_prediction,
@@ -29,6 +34,7 @@ from src.stock_data import (
 from src.strategies import (
     mean_reversion_signals,
     momentum_relative_strength_signals,
+    statistical_mean_reversion_signals,
     trend_following_signals,
 )
 
@@ -256,9 +262,8 @@ if analysis_payload:
             st.warning("At least 201 trading days of stock and SPY data are required.")
         else:
             prepared = {
-                "Trend Following": trend_following_signals(stock_df),
-                "Momentum + Relative Strength": momentum_relative_strength_signals(stock_df, spy_df),
-                "Mean Reversion": mean_reversion_signals(stock_df, max_holding_days=20),
+                "Trend / Momentum": momentum_relative_strength_signals(stock_df, spy_df),
+                "Statistical Mean Reversion": statistical_mean_reversion_signals(stock_df),
             }
             results = []
             for name, frame in prepared.items():
@@ -294,9 +299,8 @@ if analysis_payload:
             if not equity.empty:
                 equity["date"] = pd.to_datetime(equity["date"])
                 colors = {
-                    "Trend Following": "#69e39b",
-                    "Momentum + Relative Strength": "#f2a7ae",
-                    "Mean Reversion": "#3797e8",
+                    "Trend / Momentum": "#69e39b",
+                    "Statistical Mean Reversion": "#3797e8",
                     "Buy & Hold": "#84caff",
                     "SPY": "#ff4d57",
                 }
@@ -358,15 +362,106 @@ if analysis_payload:
             with st.expander("查看技術指標圖（研究用途）"):
                 selected = st.selectbox("選擇策略", list(prepared))
                 chart_columns = ["close", "ma200"]
-                if selected == "Trend Following":
-                    chart_columns.append("ma50")
-                elif selected == "Mean Reversion":
-                    chart_columns.extend(["ma20", "rsi14"])
+                if selected == "Trend / Momentum":
+                    chart_columns.extend(["momentum_6m", "benchmark_return_6m"])
+                elif selected == "Statistical Mean Reversion":
+                    chart_columns.extend(["ma20", "zscore20"])
                 st.line_chart(prepared[selected].set_index("date")[chart_columns], height=360)
+
+            with st.expander("舊策略消融比較"):
+                st.caption("保留舊版作為研究基準，不納入新的主要策略排名。")
+                legacy_prepared = {
+                    "Legacy Trend Following": trend_following_signals(stock_df),
+                    "Legacy RSI Mean Reversion": mean_reversion_signals(stock_df, max_holding_days=20),
+                }
+                legacy_results = [
+                    run_backtest(frame, symbol, name, CONFIG)
+                    for name, frame in legacy_prepared.items()
+                ]
+                legacy_table = pd.DataFrame([calculate_metrics(result) for result in legacy_results])
+                st.dataframe(
+                    legacy_table[["Strategy", "Total Return %", "Max Drawdown %", "Sharpe", "Trades"]].round(2),
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
             regime = build_regime_series(period="5y")
             latest_regime = regime.dropna(subset=["regime"]).iloc[-1]
             st.info(f"目前大盤狀態：{latest_regime['regime']}（SPY 收盤價相對 MA200）")
+
+            st.divider()
+            st.subheader("大型股 Cross-Sectional Strategy Lab")
+            st.caption("每月底以 6 個月相對強度排名，下一交易日開盤持有前 20%；包含成本與滑價。")
+            st.warning("研究限制：目前使用固定的今日大型股名單，結果可能含 survivorship bias，不能視為完整歷史大型股指數研究。")
+            if st.button("執行大型股排名研究", use_container_width=True):
+                with st.status("正在整理大型股 universe", expanded=True) as lab_status:
+                    universe_prices = {}
+                    for universe_symbol in LARGE_CAP_UNIVERSE:
+                        st.write(f"載入 {universe_symbol}…")
+                        history = get_long_history_stock_data(universe_symbol, period="5y")
+                        if not history.empty:
+                            universe_prices[universe_symbol] = history
+                    if len(universe_prices) != len(LARGE_CAP_UNIVERSE):
+                        lab_status.update(label="部分股票資料不足", state="error")
+                        st.error("無法取得完整 universe，為避免排名偏差，本次不執行。")
+                    else:
+                        cross_result = cross_sectional_momentum_backtest(universe_prices, spy_df, CONFIG)
+                        equal_weight_result = equal_weight_buy_and_hold(universe_prices, CONFIG)
+                        ranking = latest_cross_sectional_ranking(universe_prices, spy_df)
+                        st.session_state["cross_sectional_lab"] = {
+                            "result": cross_result,
+                            "equal_weight": equal_weight_result,
+                            "ranking": ranking,
+                        }
+                        lab_status.update(label="大型股排名研究完成", state="complete", expanded=False)
+
+            lab = st.session_state.get("cross_sectional_lab")
+            if lab:
+                ranking = lab["ranking"]
+                selected_symbols = ranking.loc[ranking["selected"], "symbol"].tolist()
+                st.success("目前入選：" + (", ".join(selected_symbols) if selected_symbols else "市場防禦狀態，暫不持股"))
+                ranking_display = ranking.copy()
+                ranking_display["momentum_6m"] = ranking_display["momentum_6m"] * 100
+                ranking_display["selected"] = ranking_display["selected"].map({True: "🟢 BUY", False: "⚪ WAIT"})
+                ranking_display = ranking_display.rename(columns={
+                    "rank": "排名", "symbol": "股票", "momentum_6m": "6M 動能 %",
+                    "selected": "目前訊號", "market_regime": "市場狀態",
+                })
+                st.dataframe(
+                    ranking_display[["排名", "股票", "6M 動能 %", "目前訊號", "市場狀態"]].round(2),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                portfolio_results = [lab["result"], lab["equal_weight"]]
+                portfolio_equity = equity_comparison(portfolio_results)
+                portfolio_equity["date"] = pd.to_datetime(portfolio_equity["date"])
+                portfolio_figure = go.Figure()
+                for portfolio_name in portfolio_equity.columns.drop("date"):
+                    portfolio_figure.add_trace(go.Scatter(
+                        x=portfolio_equity["date"],
+                        y=portfolio_equity[portfolio_name],
+                        name=portfolio_name,
+                        mode="lines",
+                        hovertemplate=f"<b>{portfolio_name}</b><br>%{{x|%Y-%m-%d}}<br>$%{{y:,.0f}}<extra></extra>",
+                    ))
+                portfolio_figure.update_layout(
+                    height=420,
+                    margin={"l": 15, "r": 15, "t": 20, "b": 10},
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(13,18,27,.72)",
+                    font={"color": "#dce3ed"},
+                    hovermode="x unified",
+                    dragmode="zoom",
+                    yaxis={"title": "資產價值（美元）", "tickprefix": "$", "tickformat": ",.0f"},
+                    xaxis={"rangeslider": {"visible": True, "thickness": .1}},
+                )
+                st.plotly_chart(
+                    portfolio_figure,
+                    use_container_width=True,
+                    config={"scrollZoom": True, "displaylogo": False, "responsive": True},
+                )
+                portfolio_metrics = pd.DataFrame([calculate_equity_metrics(item) for item in portfolio_results])
+                st.dataframe(portfolio_metrics.round(2), use_container_width=True, hide_index=True)
 
     with tab_data:
         st.subheader("公司基本面")

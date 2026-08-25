@@ -4,10 +4,12 @@ import pandas as pd
 
 from src.ai_analysis import extract_structured_data
 from src.backtest_engine import BacktestConfig, run_backtest
+from src.cross_sectional import cross_sectional_momentum_backtest, equal_weight_buy_and_hold
 from src.indicators import add_moving_averages, add_relative_strength
 from src.performance import calculate_metrics, completed_round_trips
 from src.strategies.mean_reversion import mean_reversion_signals
 from src.strategies.trend import trend_following_signals
+from src.strategies.statistical_mean_reversion import statistical_mean_reversion_signals
 from src.strategy_validation import fixed_horizon_validation, strategy_scorecard
 
 
@@ -129,6 +131,40 @@ class ResearchSystemTests(unittest.TestCase):
         scorecard = strategy_scorecard(records, 20)
         self.assertEqual(scorecard.loc[0, "已驗證訊號"], 1)
         self.assertEqual(scorecard.loc[0, "勝過 SPY 比率 %"], 100)
+
+    def test_statistical_mean_reversion_does_not_change_past_signals(self):
+        data = frame(240)
+        data.loc[220:, "close"] = [120 - i for i in range(20)]
+        data.loc[220:, "open"] = data.loc[220:, "close"]
+        before = statistical_mean_reversion_signals(data)
+        future = data.iloc[[-1]].copy()
+        future["date"] = "2030-01-01"
+        future[["open", "high", "low", "close"]] = 1_000_000
+        after = statistical_mean_reversion_signals(pd.concat([data, future], ignore_index=True))
+        pd.testing.assert_series_equal(before["entry_signal"], after.iloc[:-1]["entry_signal"], check_names=False)
+
+    def test_cross_sectional_ranking_executes_on_next_open(self):
+        prices = {}
+        for rank, symbol in enumerate(["A", "B", "C", "D", "E"], start=1):
+            item = frame(260, price=100)
+            item[["open", "high", "low", "close"]] = item[["open", "high", "low", "close"]] * (1 + rank * pd.Series(range(260)) / 1000).to_numpy()[:, None]
+            prices[symbol] = item
+        spy = frame(260, price=100)
+        result = cross_sectional_momentum_backtest(
+            prices, spy, BacktestConfig(commission_rate=0, slippage_rate=0), top_fraction=.2
+        )
+        first_buy = next(trade for trade in result["trades"] if trade["action"] == "BUY")
+        buy_date_i = list(prices["A"]["date"]).index(first_buy["date"])
+        self.assertEqual(first_buy["symbol"], "E")
+        self.assertNotEqual(
+            pd.Timestamp(prices["A"].loc[buy_date_i - 1, "date"]).month,
+            pd.Timestamp(prices["A"].loc[buy_date_i, "date"]).month,
+        )
+
+    def test_equal_weight_waits_until_execution_date(self):
+        prices = {symbol: frame(5) for symbol in ["A", "B"]}
+        result = equal_weight_buy_and_hold(prices, BacktestConfig(commission_rate=0, slippage_rate=0))
+        self.assertEqual(result["equity_curve"].iloc[0]["equity"], 10_000)
 
 
 if __name__ == "__main__":

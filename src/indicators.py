@@ -31,6 +31,16 @@ def add_momentum(df: pd.DataFrame, periods: int = 126) -> pd.DataFrame:
     return result
 
 
+def add_zscore(df: pd.DataFrame, window: int = 20) -> pd.DataFrame:
+    """Add a trailing price Z-score using only observations available that day."""
+    result = df.sort_values("date").copy()
+    rolling = result["close"].rolling(window, min_periods=window)
+    mean = rolling.mean()
+    std = rolling.std(ddof=0).replace(0, float("nan"))
+    result[f"zscore{window}"] = (result["close"] - mean) / std
+    return result
+
+
 def add_relative_strength(
     stock_df: pd.DataFrame,
     benchmark_df: pd.DataFrame,
