@@ -103,34 +103,48 @@ if analysis_payload:
 
     structured = structured or {}
     company_name = overview.get("公司名稱", symbol) if overview else symbol
-    st.subheader(f"{symbol} · {company_name}")
-    st.caption(f"最新資料已整理完成 · 收盤價 ${current_price:,.2f}")
+    previous_close = float(short_df["close"].iloc[-2]) if len(short_df) > 1 else current_price
+    daily_change = current_price / previous_close - 1 if previous_close else 0.0
+    name_col, price_col = st.columns([4, 1])
+    with name_col:
+        st.subheader(f"{symbol} · {company_name}")
+        st.caption(overview.get("產業別", "大型股研究") if overview else "大型股研究")
+    with price_col:
+        st.metric("最新收盤", f"${current_price:,.2f}", f"{daily_change:+.2%}")
     tab_overview, tab_strategy, tab_data = st.tabs(["投資摘要", "策略回測", "公司資料"])
 
     with tab_overview:
-        st.subheader("關鍵價位")
-        p1, p2, p3, p4 = st.columns(4)
-        p1.metric("目前股價", f"${current_price:,.2f}")
-        p2.metric("參考進場區", f"${structured.get('entry_zone_low', '—')} – ${structured.get('entry_zone_high', '—')}")
-        p3.metric("參考停利區", f"${structured.get('take_profit_low', '—')} – ${structured.get('take_profit_high', '—')}")
-        p4.metric("向下失效價", f"${structured.get('invalidation_down', '—')}")
+        st.line_chart(short_df.set_index("date")[["close"]], height=380)
 
-        st.subheader("AI 三種情境")
-        bull, base, bear = st.columns(3)
-        bull.metric("樂觀情境", f"${structured.get('bull_low', '—')} – ${structured.get('bull_high', '—')}")
-        base.metric("中性情境", f"${structured.get('base_low', '—')} – ${structured.get('base_high', '—')}")
-        bear.metric("悲觀情境", f"${structured.get('bear_low', '—')} – ${structured.get('bear_high', '—')}")
+        entry, target, risk = st.columns(3)
+        entry.metric("參考進場", f"${structured.get('entry_zone_low', '—')} – ${structured.get('entry_zone_high', '—')}")
+        target.metric("參考目標", f"${structured.get('take_profit_low', '—')} – ${structured.get('take_profit_high', '—')}")
+        risk.metric("風險失效價", f"${structured.get('invalidation_down', '—')}")
 
-        st.subheader("近期走勢")
-        st.line_chart(short_df.set_index("date")[["close"]], height=300)
+        st.markdown("#### AI 情境")
+        scenario = st.segmented_control(
+            "選擇情境",
+            ["中性", "樂觀", "悲觀"],
+            default="中性",
+            label_visibility="collapsed",
+        )
+        scenario_fields = {
+            "中性": ("base_low", "base_high", "目前資訊下的主要參考區間"),
+            "樂觀": ("bull_low", "bull_high", "成長與市場條件優於預期時"),
+            "悲觀": ("bear_low", "bear_high", "需求或市場環境轉弱時"),
+        }
+        low_key, high_key, scenario_note = scenario_fields[scenario or "中性"]
+        scenario_col, note_col = st.columns([1, 3])
+        scenario_col.metric(f"{scenario or '中性'}區間", f"${structured.get(low_key, '—')} – ${structured.get(high_key, '—')}")
+        note_col.info(scenario_note)
 
-        with st.expander("查看完整 AI 研究報告"):
+        with st.expander("完整 AI 分析"):
             st.markdown(str(report).replace("\\n", "\n"))
 
-        st.subheader("近期新聞")
-        for item in news[:5]:
-            st.markdown(f"**{item['title']}**")
-            st.caption(f"{item['time_published']} · {item['source']} · {item['overall_sentiment_label']}")
+        with st.expander(f"近期新聞（{min(len(news), 5)}）"):
+            for item in news[:5]:
+                st.markdown(f"**{item['title']}**")
+                st.caption(f"{item['time_published']} · {item['source']} · {item['overall_sentiment_label']}")
 
     with tab_strategy:
         st.subheader("大型股策略比較")
