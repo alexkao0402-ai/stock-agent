@@ -38,7 +38,7 @@ def cross_sectional_momentum_backtest(
     panel = panel[panel["date"].isin(dates)]
     cash = config.initial_capital
     shares: dict[str, float] = {}
-    pending_targets: list[str] | None = None
+    pending_rebalance: dict | None = None
     equity_rows = []
     trades = []
 
@@ -46,8 +46,9 @@ def cross_sectional_momentum_backtest(
         day = panel[panel["date"] == date].set_index("symbol")
         available = [symbol for symbol in price_data if symbol in day.index and pd.notna(day.loc[symbol, "open"])]
 
-        if pending_targets is not None:
-            targets = [symbol for symbol in pending_targets if symbol in available]
+        if pending_rebalance is not None:
+            targets = [symbol for symbol in pending_rebalance["targets"] if symbol in available]
+            signal_date = pending_rebalance["signal_date"]
             pretrade_value = cash + sum(
                 quantity * float(day.loc[symbol, "open"])
                 for symbol, quantity in shares.items()
@@ -65,7 +66,7 @@ def cross_sectional_momentum_backtest(
                     commission = notional * config.transaction_cost_pct
                     cash += notional - commission
                     shares[symbol] = quantity - sell_quantity
-                    trades.append({"date": date, "symbol": symbol, "action": "SELL", "notional": notional, "cost": commission})
+                    trades.append({"signal_date": signal_date, "execution_date": date, "date": date, "symbol": symbol, "strategy": "Cross-Sectional Momentum", "action": "SELL", "execution_price": execution_price, "shares": sell_quantity, "notional": notional, "transaction_cost": commission, "reason": "20D rebalance"})
 
             for symbol in targets:
                 raw_open = float(day.loc[symbol, "open"])
@@ -79,9 +80,9 @@ def cross_sectional_momentum_backtest(
                     commission = notional * config.transaction_cost_pct
                     cash -= notional + commission
                     shares[symbol] = shares.get(symbol, 0.0) + buy_quantity
-                    trades.append({"date": date, "symbol": symbol, "action": "BUY", "notional": notional, "cost": commission})
+                    trades.append({"signal_date": signal_date, "execution_date": date, "date": date, "symbol": symbol, "strategy": "Cross-Sectional Momentum", "action": "BUY", "execution_price": execution_price, "shares": buy_quantity, "notional": notional, "transaction_cost": commission, "reason": "Top 20% by trailing 20D return"})
             shares = {symbol: quantity for symbol, quantity in shares.items() if quantity > 1e-10}
-            pending_targets = None
+            pending_rebalance = None
 
         close_value = cash + sum(
             quantity * float(day.loc[symbol, "close"])
@@ -99,7 +100,8 @@ def cross_sectional_momentum_backtest(
                     & (day["close"] > day["ma200"])
                 ]
                 count = max(1, math.ceil(len(price_data) * top_fraction))
-                pending_targets = eligible.nlargest(count, "return_20d").index.tolist() if spy_bull else []
+                targets = eligible.nlargest(count, "return_20d").index.tolist() if spy_bull else []
+                pending_rebalance = {"signal_date": date, "targets": targets}
 
     curve = pd.DataFrame(equity_rows)
     return {

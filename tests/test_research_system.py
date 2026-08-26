@@ -166,6 +166,9 @@ class ResearchSystemTests(unittest.TestCase):
         buy_date_i = list(prices["A"]["date"]).index(first_buy["date"])
         self.assertEqual(first_buy["symbol"], "E")
         self.assertEqual(buy_date_i, 200)
+        self.assertEqual(first_buy["signal_date"], prices["A"].loc[199, "date"])
+        self.assertEqual(first_buy["execution_date"], prices["A"].loc[200, "date"])
+        self.assertIn("transaction_cost", first_buy)
 
     def test_cross_sectional_ranking_no_future_data(self):
         prices = {symbol: frame(260, price=100 + rank) for rank, symbol in enumerate(["A", "B", "C", "D", "E"])}
