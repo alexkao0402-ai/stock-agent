@@ -2,12 +2,14 @@ import unittest
 import json
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
 from src.ai_analysis import extract_structured_data
 from src.backtest_engine import BacktestConfig, run_backtest
 from src.cross_sectional import cross_sectional_momentum_backtest, equal_weight_buy_and_hold
+from src.config import get_secret
 from src.indicators import add_moving_averages, add_relative_strength
 from src.prediction_tracker import enrich_prediction
 from src.performance import calculate_metrics, completed_round_trips
@@ -30,6 +32,10 @@ def frame(size=220, start="2020-01-01", price=100.0):
 
 
 class ResearchSystemTests(unittest.TestCase):
+    def test_environment_secret_is_supported_without_streamlit_file(self):
+        with patch.dict("os.environ", {"DEPLOYMENT_TEST_KEY": "configured"}):
+            self.assertEqual(get_secret("DEPLOYMENT_TEST_KEY"), "configured")
+
     def test_embedded_json_avoids_second_ai_extraction(self):
         report = """<!--STRUCTURED_JSON
 {"current_price": 100, "bull_low": 120, "bull_high": 130}

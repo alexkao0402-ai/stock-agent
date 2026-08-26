@@ -1,4 +1,3 @@
-import os
 import time
 from typing import Any
 
@@ -8,9 +7,9 @@ import yfinance as yf
 from dotenv import load_dotenv
 
 from src.cache_utils import load_from_cache, save_to_cache
+from src.config import get_secret
 
 load_dotenv()
-api_key = os.getenv("ALPHAVANTAGE_API_KEY")
 ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
 
 
@@ -18,8 +17,13 @@ class DataProviderError(RuntimeError):
     pass
 
 
+def has_alpha_vantage_key() -> bool:
+    return bool(get_secret("ALPHAVANTAGE_API_KEY"))
+
+
 def _request_json(params: dict[str, Any], timeout: int = 15, retries: int = 2):
     """Centralized Alpha Vantage request with timeout/retry/error handling."""
+    api_key = get_secret("ALPHAVANTAGE_API_KEY")
     if not api_key:
         raise DataProviderError("ALPHAVANTAGE_API_KEY is not configured.")
 
@@ -55,6 +59,7 @@ def get_daily_stock_data(symbol, outputsize="compact"):
     if cached_data is not None:
         return cached_data
 
+    api_key = get_secret("ALPHAVANTAGE_API_KEY")
     try:
         data = _request_json({
             "function": "TIME_SERIES_DAILY",
@@ -91,6 +96,7 @@ def get_news_sentiment(symbol, limit=20):
     if cached_data is not None:
         return cached_data
 
+    api_key = get_secret("ALPHAVANTAGE_API_KEY")
     try:
         data = _request_json({
             "function": "NEWS_SENTIMENT",
@@ -133,6 +139,7 @@ def get_company_overview(symbol):
     if cached_data is not None:
         return cached_data
 
+    api_key = get_secret("ALPHAVANTAGE_API_KEY")
     try:
         data = _request_json({
             "function": "OVERVIEW",

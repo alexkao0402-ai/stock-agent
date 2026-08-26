@@ -112,6 +112,31 @@ Copy-Item .env.example .env
 streamlit run app.py
 ```
 
+## Streamlit Community Cloud
+
+- Repository: `alexkao0402-ai/stock-agent`
+- Branch: `refactor/large-cap-strategies`
+- Main file: `app.py`
+- Recommended Python version: `3.11`
+
+Add these values in the app's **Settings → Secrets** page. Never commit the
+real values to Git:
+
+```toml
+ALPHAVANTAGE_API_KEY = "your_alpha_vantage_key"
+ANTHROPIC_API_KEY = "your_anthropic_key"
+```
+
+Both Streamlit `st.secrets` and local environment variables are supported.
+Without Alpha Vantage, the app falls back to yfinance prices and clearly marks
+news/fundamentals as unavailable. Without Anthropic, price and quantitative
+research still load while AI scenarios are disabled. `OPENAI_API_KEY` is not
+used by this application.
+
+The local `cache/`, `predictions/`, and `signal_snapshots/` directories are
+ephemeral on Community Cloud. Use an external database before relying on
+historical prediction records as durable multi-user storage.
+
 Run all correctness tests:
 
 ```powershell

@@ -1,14 +1,27 @@
 # ai_analysis.py
 # 這個檔案負責處理「把股價資料 + 新聞資料 + 公司基本面資料交給 AI 分析」的功能
 
-import os
 import re
 from anthropic import Anthropic
 from dotenv import load_dotenv
+from src.config import get_secret
 
 load_dotenv()
 
-client = Anthropic()
+
+class AIConfigurationError(RuntimeError):
+    pass
+
+
+def has_anthropic_key() -> bool:
+    return bool(get_secret("ANTHROPIC_API_KEY"))
+
+
+def _anthropic_client() -> Anthropic:
+    api_key = get_secret("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise AIConfigurationError("ANTHROPIC_API_KEY is not configured.")
+    return Anthropic(api_key=api_key)
 
 
 def format_news_for_prompt(news_list, max_items=15):
@@ -146,7 +159,7 @@ def generate_report(symbol, df, news_list=None, overview=None):
 -->
 不要用 Markdown code fence 包住這個註解。"""
 
-    message = client.messages.create(
+    message = _anthropic_client().messages.create(
         model="claude-sonnet-4-5",
         max_tokens=4096,
         messages=[
@@ -211,7 +224,7 @@ def extract_structured_data(symbol, current_price, report_text):
   "invalidation_up": 數字或null
 }}"""
 
-    message = client.messages.create(
+    message = _anthropic_client().messages.create(
         model="claude-sonnet-4-5",
         max_tokens=500,
         messages=[
