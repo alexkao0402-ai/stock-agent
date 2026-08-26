@@ -11,6 +11,7 @@ from src.cross_sectional import cross_sectional_momentum_backtest, equal_weight_
 from src.indicators import add_moving_averages, add_relative_strength
 from src.prediction_tracker import enrich_prediction
 from src.performance import calculate_metrics, completed_round_trips
+from src.signal_snapshot import save_daily_signal_snapshot
 from src.strategies.mean_reversion import mean_reversion_signals
 from src.strategies.momentum import momentum_relative_strength_signals
 from src.strategy_validation import fixed_horizon_validation, strategy_scorecard
@@ -218,6 +219,26 @@ class ResearchSystemTests(unittest.TestCase):
         self.assertEqual(set(validated), {"5", "10", "20"})
         self.assertAlmostEqual(validated["10"]["alpha_pct"], 5.0)
         self.assertTrue(validated["20"]["beat_spy"])
+
+    def test_daily_signal_snapshot_is_immutable_and_versioned(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first = save_daily_signal_snapshot(
+                "2026-08-25",
+                [{"ticker": "AAPL", "strategy": "Momentum", "signal": "BUY"}],
+                "Favorable",
+                temp_dir,
+            )
+            second = save_daily_signal_snapshot(
+                "2026-08-25",
+                [{"ticker": "AAPL", "strategy": "Momentum", "signal": "WAIT"}],
+                "Unfavorable",
+                temp_dir,
+            )
+            saved = json.loads(Path(first).read_text(encoding="utf-8"))
+            self.assertEqual(first, second)
+            self.assertEqual(saved["schema_version"], 1)
+            self.assertEqual(saved["signals"][0]["signal"], "BUY")
+            self.assertEqual(saved["market_regime"], "Favorable")
 
 
 if __name__ == "__main__":

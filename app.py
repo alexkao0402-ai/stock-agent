@@ -210,9 +210,17 @@ if analysis_payload:
         """,
         unsafe_allow_html=True,
     )
-    tab_overview, tab_strategy, tab_data = st.tabs(["投資摘要", "策略回測", "公司資料"])
+    data_as_of = pd.to_datetime(short_df["date"].iloc[-1]).strftime("%Y/%m/%d")
+    st.caption(f"資料截至 {data_as_of} 收盤 · 非即時報價")
+    selected_page = st.segmented_control(
+        "研究頁面",
+        ["投資摘要", "策略回測", "公司資料"],
+        default="投資摘要",
+        label_visibility="collapsed",
+        key=f"research_page_{symbol}",
+    )
 
-    with tab_overview:
+    if selected_page == "投資摘要":
         st.line_chart(short_df.set_index("date")[["close"]], height=380)
 
         entry, target, risk = st.columns(3)
@@ -249,7 +257,8 @@ if analysis_payload:
                 st.markdown(f"**{item['title']}**")
                 st.caption(f"{item['time_published']} · {item['source']} · {item['overall_sentiment_label']}")
 
-    with tab_strategy:
+    elif selected_page == "策略回測":
+        st.info("完整回測只會在開啟此頁時執行；首次載入固定股票池可能需要一些時間，之後會使用快取。")
         stock_df = get_long_history_stock_data(symbol, period="5y")
         spy_df = get_long_history_stock_data("SPY", period="5y")
         if stock_df.empty or spy_df.empty or len(stock_df) < 201:
@@ -271,8 +280,8 @@ if analysis_payload:
             spy_result = run_buy_and_hold(spy_df, "SPY", CONFIG)
             spy_result["strategy"] = "SPY"
 
-            st.subheader("Current Swing Signals")
-            st.success("Market Regime：🟢 Favorable" if favorable else "Market Regime：🔴 Unfavorable")
+            st.subheader("今日策略看法")
+            st.success("市場環境：🟢 有利" if favorable else "市場環境：🔴 不利")
             signal_rows = [current_signal(name, prepared[name], result) for name, result in zip(prepared, single_results)]
             if not ranking.empty:
                 selected_row = ranking[ranking["symbol"] == symbol]
@@ -287,8 +296,18 @@ if analysis_payload:
                     })
             signal_labels = {"BUY": "🟢 BUY", "HOLD": "🟢 HOLD", "EXIT": "🔴 EXIT", "SELL": "🔴 EXIT", "WAIT": "⚪ WAIT"}
             st.dataframe(pd.DataFrame([{
-                "Strategy": row["strategy"], "Signal": signal_labels.get(row["signal"], row["signal"]), "Reason": row["reason"]
+                "策略": row["strategy"], "訊號": signal_labels.get(row["signal"], row["signal"]), "原因": row["reason"]
             } for row in signal_rows]), use_container_width=True, hide_index=True)
+
+            actionable = [row for row in signal_rows if row["signal"] in {"BUY", "HOLD", "SELL", "EXIT"}]
+            if actionable:
+                summary = "；".join(
+                    f"{row['strategy']}：{signal_labels.get(row['signal'], row['signal'])}"
+                    for row in actionable
+                )
+                st.info(f"簡單結論：{summary}。訊號以今日收盤資料判斷；新交易最快於下一個交易日開盤執行。")
+            else:
+                st.info("簡單結論：目前三個策略都沒有新的進場條件，先等待。訊號以今日收盤資料判斷。")
 
             pull_row = prepared["Pullback Mean Reversion"].iloc[-1]
             for row in signal_rows:
@@ -303,8 +322,8 @@ if analysis_payload:
 
             strategy_results = single_results + ([cross_result] if cross_result else [])
             all_results = strategy_results + [buy_hold_result, spy_result]
-            st.subheader("Portfolio Equity Curve")
-            st.caption("If $10,000 were allocated to each strategy at the beginning of the test period.")
+            st.subheader("一萬元歷史成長比較")
+            st.caption("假設測試開始時，每個策略、股票持有與 SPY 都各投入 10,000 美元。")
             equity = equity_comparison(all_results)
             equity["date"] = pd.to_datetime(equity["date"])
             figure = go.Figure()
@@ -324,18 +343,18 @@ if analysis_payload:
                 row["Alpha vs SPY"] = row["Total Return %"] - spy_total
                 rows.append(row)
             comparison = pd.DataFrame(rows)
-            st.subheader("Strategy Performance")
+            st.subheader("策略績效比較")
             st.dataframe(comparison[["Strategy", "Total Return %", "CAGR %", "Sharpe", "Sortino", "Max Drawdown %", "Win Rate %", "Profit Factor", "Trades", "Exposure %", "Alpha vs SPY"]].round(2), use_container_width=True, hide_index=True)
 
             candidates = comparison[comparison["Strategy"].isin([r["strategy"] for r in strategy_results])]
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Highest Return", candidates.loc[candidates["Total Return %"].idxmax(), "Strategy"])
-            c2.metric("Risk-Adjusted Winner", candidates.loc[candidates["Sharpe"].idxmax(), "Strategy"])
-            c3.metric("Lowest Drawdown", candidates.loc[candidates["Max Drawdown %"].idxmax(), "Strategy"])
-            c4.metric("Market Regime", "Favorable" if favorable else "Unfavorable")
+            c1.metric("最高報酬", candidates.loc[candidates["Total Return %"].idxmax(), "Strategy"])
+            c2.metric("風險調整後最佳", candidates.loc[candidates["Sharpe"].idxmax(), "Strategy"])
+            c3.metric("歷史跌幅最低", candidates.loc[candidates["Max Drawdown %"].idxmax(), "Strategy"])
+            c4.metric("市場環境", "有利" if favorable else "不利")
 
-            st.subheader("Chronological Validation")
-            st.caption("固定規則未做參數最佳化；前 70% 為 research period，後 30% 為 out-of-sample holdout。策略評價優先看 OOS。")
+            st.subheader("時間順序驗證")
+            st.caption("固定規則未做參數最佳化；前 70% 是研究期間，後 30% 是未參與規則設計的驗證期間。判斷穩定性時優先看後 30%。")
             split_rows = []
             for result in strategy_results:
                 split = chronological_split_metrics(result)
@@ -363,7 +382,7 @@ if analysis_payload:
 
             st.warning("Fixed current large-cap universe for research purposes. The historical result contains survivorship bias and does not use point-in-time S&P membership.")
 
-    with tab_data:
+    elif selected_page == "公司資料":
         st.subheader("公司基本面")
         fundamentals = overview or {}
         f1, f2, f3, f4 = st.columns(4)
@@ -378,10 +397,16 @@ if analysis_payload:
             st.dataframe(short_df.sort_values("date", ascending=False), use_container_width=True, hide_index=True)
 
         st.subheader("歷史預測")
-        predictions = list_predictions()
+        history_scope = st.segmented_control(
+            "歷史範圍",
+            ["目前股票", "全部股票"],
+            default="目前股票",
+        )
+        predictions = list_predictions(symbol if history_scope != "全部股票" else None)
         scorecard_records = [record for record in predictions if record.get("strategy_validation")]
         if scorecard_records:
-            st.markdown("#### Strategy Scorecard")
+            st.markdown("#### 訊號後跑贏 SPY 統計")
+            st.caption("這裡衡量 BUY 訊號後股票是否跑贏 SPY，不等同依照完整進出規則計算的實際策略報酬。")
             score_horizon = st.segmented_control("驗證期間", [5, 10, 20], default=20, format_func=lambda value: f"{value}D")
             scorecard = strategy_scorecard(scorecard_records, score_horizon or 20)
             if scorecard.empty:

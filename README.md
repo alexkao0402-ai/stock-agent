@@ -80,6 +80,25 @@ Long-history research uses yfinance with `auto_adjust=True`, so OHLC prices are 
 - Matured outcomes are evaluated after 5, 10, and 20 trading days.
 - `Alpha = Stock Return - SPY Return`.
 - Historical outperformance rates include sample size and only count saved `BUY` snapshots with matured outcomes.
+- The UI labels this as signal outperformance rather than realized strategy P&L, because fixed-horizon stock returns do not reproduce each strategy's exit rules.
+
+## Daily signal snapshots
+
+Run the point-in-time universe capture after the US market close:
+
+```bash
+python -m scripts.capture_daily_signals
+```
+
+The command writes one immutable, schema-versioned file per market date under
+`signal_snapshots/`. Re-running the same date never overwrites the original
+signals. The runtime directory is excluded from Git.
+
+## App loading behavior
+
+The main research areas use a single page selector rather than eagerly computed
+tabs. The five-year universe backtest loads only when the user opens the strategy
+research page; the investment summary and company history do not trigger it.
 - Full-history results are supplemented with a chronological 70% research / 30% out-of-sample holdout. No random time-series split is used.
 - Fixed rules are not optimized on either segment; the split is a stability check, not parameter selection.
 
