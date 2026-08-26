@@ -153,7 +153,8 @@ if analyze_clicked:
                     "take_profit_low", "take_profit_high", "invalidation_down", "invalidation_up",
                 )
                 structured = {key: recent_prediction.get(key) for key in structured_keys}
-                saved_path = recent_prediction["_filepath"]
+                # Reuse expensive AI text, but create a new immutable point-in-time record.
+                saved_path = save_prediction(symbol, current_price, structured, report)
             else:
                 st.write("產生 AI 情境分析…")
                 report = generate_report(symbol, short_df, news, overview)

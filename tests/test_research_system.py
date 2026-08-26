@@ -197,6 +197,14 @@ class ResearchSystemTests(unittest.TestCase):
             saved = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(saved["strategy_signals"][0]["signal"], "BUY")
 
+    def test_old_snapshot_does_not_receive_recomputed_regime(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "record.json"
+            path.write_text(json.dumps({"strategy_signals": [{"strategy": "Pullback", "signal": "BUY"}]}), encoding="utf-8")
+            enrich_prediction(str(path), strategy_signals=[{"strategy": "Pullback", "signal": "WAIT"}], market_regime="Favorable")
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertNotIn("market_regime", saved)
+
     def test_future_5d_10d_20d_validation_and_alpha(self):
         stock = frame(30, price=100)
         spy = frame(30, price=100)

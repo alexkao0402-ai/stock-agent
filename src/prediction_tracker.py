@@ -115,9 +115,11 @@ def enrich_prediction(filepath, strategy_signals=None, strategy_validation=None,
     """Append research fields while preserving the immutable original prediction."""
     with open(filepath, "r", encoding="utf-8") as f:
         record = json.load(f)
+    snapshot_added = False
     if strategy_signals is not None and not record.get("strategy_signals"):
         record["strategy_signals"] = strategy_signals
-    if market_regime is not None and not record.get("market_regime"):
+        snapshot_added = True
+    if market_regime is not None and snapshot_added and not record.get("market_regime"):
         record["market_regime"] = market_regime
     if strategy_validation:
         existing = record.setdefault("strategy_validation", {})
