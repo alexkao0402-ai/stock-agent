@@ -1,57 +1,76 @@
-# stock_data.py
-# 這個檔案負責處理「跟股票資料有關」的功能
-
 import os
-import requests
+import time
+from typing import Any
+
 import pandas as pd
+import requests
 import yfinance as yf
 from dotenv import load_dotenv
-from src.cache_utils import save_to_cache, load_from_cache
+
+from src.cache_utils import load_from_cache, save_to_cache
 
 load_dotenv()
 api_key = os.getenv("ALPHAVANTAGE_API_KEY")
+ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
+
+
+class DataProviderError(RuntimeError):
+    pass
+
+
+def _request_json(params: dict[str, Any], timeout: int = 15, retries: int = 2):
+    """Centralized Alpha Vantage request with timeout/retry/error handling."""
+    if not api_key:
+        raise DataProviderError("ALPHAVANTAGE_API_KEY is not configured.")
+
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            response = requests.get(ALPHA_VANTAGE_URL, params=params, timeout=timeout)
+            response.raise_for_status()
+            data = response.json()
+
+            if "Note" in data:
+                raise DataProviderError(f"Alpha Vantage rate limit: {data['Note']}")
+            if "Information" in data and not any(
+                key in data
+                for key in ("Time Series (Daily)", "Time Series (Digital Currency Daily)", "feed", "Symbol")
+            ):
+                raise DataProviderError(data["Information"])
+            if "Error Message" in data:
+                raise DataProviderError(data["Error Message"])
+
+            return data
+        except (requests.RequestException, ValueError, DataProviderError) as exc:
+            last_error = exc
+            if attempt < retries:
+                time.sleep(1.5 * (attempt + 1))
+
+    raise DataProviderError(str(last_error))
 
 
 def get_daily_stock_data(symbol, outputsize="compact"):
-    """
-    向 Alpha Vantage 要某支股票的每日歷史價格資料。
-    優先使用快取，快取不存在或過期時才真正呼叫 API。
-
-    symbol: 股票代號，例如 "BTDR"
-    outputsize: "compact"（最近100天，預設）或 "full"（完整歷史，通常20年）
-                Strategy V1 需要算 MA200，必須用 "full" 才有足夠天數
-    回傳：API 回應的原始資料（Python 字典格式）
-    """
-
-    # 快取的 key 要包含 outputsize，因為 compact 和 full 是不同的資料量，不能共用同一份快取
     cache_key = f"{symbol}_daily_price_{outputsize}"
-
     cached_data = load_from_cache(cache_key, max_age_hours=20)
     if cached_data is not None:
         return cached_data
 
-    url = "https://www.alphavantage.co/query"
-    params = {
-        "function": "TIME_SERIES_DAILY",
-        "symbol": symbol,
-        "outputsize": outputsize,
-        "apikey": api_key
-    }
-    response = requests.get(url, params=params)
-    data = response.json()
+    try:
+        data = _request_json({
+            "function": "TIME_SERIES_DAILY",
+            "symbol": symbol,
+            "outputsize": outputsize,
+            "apikey": api_key,
+        })
+    except DataProviderError:
+        return {}
 
     if "Time Series (Daily)" in data:
         save_to_cache(cache_key, data)
-
     return data
 
 
 def clean_stock_data(raw_data):
-    """
-    把 API 回傳的原始 JSON 資料，轉換成乾淨的 pandas 表格（DataFrame）。
-    raw_data: get_daily_stock_data() 回傳的字典
-    回傳：一個 pandas DataFrame，欄位為 date, open, high, low, close, volume
-    """
     daily_data = raw_data["Time Series (Daily)"]
     df = pd.DataFrame.from_dict(daily_data, orient="index")
     df.columns = ["open", "high", "low", "close", "volume"]
@@ -60,88 +79,77 @@ def clean_stock_data(raw_data):
         "high": float,
         "low": float,
         "close": float,
-        "volume": int
+        "volume": int,
     })
     df.index.name = "date"
-    df = df.reset_index()
-    df = df.sort_values("date").reset_index(drop=True)
-    return df
+    return df.reset_index().sort_values("date").reset_index(drop=True)
 
 
 def get_news_sentiment(symbol, limit=20):
-    """
-    向 Alpha Vantage 要某支股票最近的相關新聞，附帶情緒分析分數。
-    優先使用快取，快取不存在或過期時才真正呼叫 API。
-
-    symbol: 股票代號，例如 "BTDR"
-    limit: 最多抓幾則新聞，預設 20 則
-    回傳：一個 list，每一項是一則新聞的重點資訊（字典格式）
-    """
-
     cache_key = f"{symbol}_news"
-
-    # 新聞變化比股價快，快取設定4小時內有效
     cached_data = load_from_cache(cache_key, max_age_hours=4)
     if cached_data is not None:
         return cached_data
 
-    url = "https://www.alphavantage.co/query"
-    params = {
-        "function": "NEWS_SENTIMENT",
-        "tickers": symbol,
-        "limit": limit,
-        "apikey": api_key
-    }
-    response = requests.get(url, params=params)
-    data = response.json()
+    try:
+        data = _request_json({
+            "function": "NEWS_SENTIMENT",
+            "tickers": symbol,
+            "limit": limit,
+            "apikey": api_key,
+        })
+    except DataProviderError:
+        return []
 
     if "feed" not in data:
         return []
 
-    news_list = []
-    for item in data["feed"]:
-        news_list.append({
+    news_list = [
+        {
             "title": item.get("title"),
             "time_published": item.get("time_published"),
             "summary": item.get("summary"),
             "overall_sentiment_label": item.get("overall_sentiment_label"),
-            "source": item.get("source")
-        })
-
-    # 只有成功整理出新聞清單時才存進快取
+            "source": item.get("source"),
+            "url": item.get("url"),
+        }
+        for item in data["feed"]
+    ]
     if news_list:
         save_to_cache(cache_key, news_list)
-
     return news_list
 
 
+def _safe_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def get_company_overview(symbol):
-    """
-    向 Alpha Vantage 要某支股票的公司基本面總覽資料。
-    優先使用快取，快取不存在或過期時才真正呼叫 API。
-
-    symbol: 股票代號，例如 "BTDR"
-    回傳：一個字典，包含市值、本益比、營收等重要指標
-    """
-
     cache_key = f"{symbol}_overview"
-
-    # 基本面資料通常一季才更新一次，快取設定72小時（3天）內有效
     cached_data = load_from_cache(cache_key, max_age_hours=72)
     if cached_data is not None:
         return cached_data
 
-    url = "https://www.alphavantage.co/query"
-    params = {
-        "function": "OVERVIEW",
-        "symbol": symbol,
-        "apikey": api_key
-    }
-    response = requests.get(url, params=params)
-    data = response.json()
+    try:
+        data = _request_json({
+            "function": "OVERVIEW",
+            "symbol": symbol,
+            "apikey": api_key,
+        })
+    except DataProviderError:
+        return {}
 
     if not data or "Symbol" not in data:
         return {}
+
+    gross_profit = _safe_float(data.get("GrossProfitTTM"))
+    revenue = _safe_float(data.get("RevenueTTM"))
+    gross_margin_pct = None
+    if gross_profit is not None and revenue not in (None, 0):
+        gross_margin_pct = round(gross_profit / revenue * 100, 2)
 
     overview = {
         "公司名稱": data.get("Name"),
@@ -149,127 +157,41 @@ def get_company_overview(symbol):
         "市值": data.get("MarketCapitalization"),
         "本益比": data.get("PERatio"),
         "每股盈餘": data.get("EPS"),
-        "毛利率": data.get("GrossProfitTTM"),
+        "毛利(TTM)": data.get("GrossProfitTTM"),
+        "毛利率": gross_margin_pct,
         "營收(近12個月)": data.get("RevenueTTM"),
         "營業利益率": data.get("OperatingMarginTTM"),
         "股價淨值比": data.get("PriceToBookRatio"),
         "52週最高價": data.get("52WeekHigh"),
         "52週最低價": data.get("52WeekLow"),
-        "公司簡介": data.get("Description")
+        "公司簡介": data.get("Description"),
     }
-
-    # 只有成功拿到有效資料時才存進快取
     save_to_cache(cache_key, overview)
-
     return overview
 
+
 def get_crypto_daily_data(symbol="BTC", market="USD"):
-    """
-    向 Alpha Vantage 要某個加密貨幣的每日價格資料。
-    優先使用快取，快取不存在或過期時才真正呼叫 API。
-
-    symbol: 加密貨幣代號，例如 "BTC"
-    market: 報價幣別，例如 "USD"
-    回傳：API 回應的原始資料（Python 字典格式）
-    """
-
     cache_key = f"{symbol}_{market}_crypto_daily"
-
     cached_data = load_from_cache(cache_key, max_age_hours=20)
     if cached_data is not None:
         return cached_data
 
-    url = "https://www.alphavantage.co/query"
-    params = {
-        "function": "DIGITAL_CURRENCY_DAILY",
-        "symbol": symbol,
-        "market": market,
-        "apikey": api_key
-    }
-    response = requests.get(url, params=params)
-    data = response.json()
+    try:
+        data = _request_json({
+            "function": "DIGITAL_CURRENCY_DAILY",
+            "symbol": symbol,
+            "market": market,
+            "apikey": api_key,
+        })
+    except DataProviderError:
+        return {}
 
-    # 確認真實測試過後，成功時的資料會包含這個 key
     if "Time Series (Digital Currency Daily)" in data:
         save_to_cache(cache_key, data)
-
     return data
 
-def get_long_history_stock_data(symbol, period="2y"):
-    """
-    用 yfinance 抓取某支股票的長期歷史股價資料（免費，不受 Alpha Vantage 額度限制）。
-    這是專門給需要長歷史資料的功能使用（例如 Strategy V1 的 MA200 計算）。
-
-    symbol: 股票代號，例如 "BTDR"
-    period: 要抓多長的歷史，例如 "2y"（2年）、"5y"（5年）、"max"（全部歷史）
-
-    回傳：一個 pandas DataFrame，欄位為 date, open, high, low, close, volume
-    """
-
-    cache_key = f"{symbol}_long_history_{period}"
-
-    cached_data = load_from_cache(cache_key, max_age_hours=20)
-    if cached_data is not None:
-        # 快取存的是「已經處理成list的資料」，讀回來要轉換回 DataFrame
-        return pd.DataFrame(cached_data)
-
-    raw_df = yf.download(symbol, period=period, progress=False)
-
-    if raw_df.empty:
-        return pd.DataFrame()
-
-    # yfinance 回傳的表格有多層欄位(MultiIndex)，我們把它壓平成單層，方便後續處理
-    raw_df.columns = raw_df.columns.get_level_values(0)
-
-    # 整理成我們習慣的欄位名稱與順序
-    df = raw_df[["Open", "High", "Low", "Close", "Volume"]].copy()
-    df.columns = ["open", "high", "low", "close", "volume"]
-
-    # 目前日期是index，把它變成一個獨立欄位，並轉換成文字格式（方便存進JSON快取、也方便跟其他資料比對）
-    df.index.name = "date"
-    df = df.reset_index()
-    df["date"] = df["date"].dt.strftime("%Y-%m-%d")
-
-    df = df.sort_values("date").reset_index(drop=True)
-
-    # 存進快取前，要先把 DataFrame 轉換成list of dict這種能被存成JSON的格式
-    save_to_cache(cache_key, df.to_dict(orient="records"))
-
-    return df
-
-if __name__ == "__main__":
-    raw = get_daily_stock_data("BTDR")
-    df = clean_stock_data(raw)
-    print(df.head())
-    print("...")
-    print(df.tail())
-    print("\n資料筆數與型態：")
-    print(df.info())
-
-    print("\n\n===== 新聞資料測試 =====")
-    news = get_news_sentiment("BTDR", limit=5)
-    print(f"抓到 {len(news)} 則新聞\n")
-    for n in news:
-        print(f"標題：{n['title']}")
-        print(f"時間：{n['time_published']}")
-        print(f"情緒：{n['overall_sentiment_label']}")
-        print(f"來源：{n['source']}")
-        print("---")
-
-    print("\n\n===== 公司基本面測試 =====")
-    overview = get_company_overview("BTDR")
-    for key, value in overview.items():
-        if key == "公司簡介":
-            print(f"{key}：{str(value)[:100]}...")
-        else:
-            print(f"{key}：{value}")
 
 def clean_crypto_data(raw_data):
-    """
-    把 get_crypto_daily_data() 回傳的原始 JSON，轉換成乾淨的 pandas 表格。
-    raw_data: get_crypto_daily_data() 回傳的字典
-    回傳：一個 pandas DataFrame，欄位為 date, open, high, low, close, volume
-    """
     daily_data = raw_data["Time Series (Digital Currency Daily)"]
     df = pd.DataFrame.from_dict(daily_data, orient="index")
     df.columns = ["open", "high", "low", "close", "volume"]
@@ -278,9 +200,41 @@ def clean_crypto_data(raw_data):
         "high": float,
         "low": float,
         "close": float,
-        "volume": float  # 加密貨幣成交量常是小數（例如 124.21 顆比特幣），不能用 int
+        "volume": float,
     })
     df.index.name = "date"
+    return df.reset_index().sort_values("date").reset_index(drop=True)
+
+
+def get_long_history_stock_data(symbol, period="2y"):
+    cache_key = f"{symbol}_long_history_{period}"
+    cached_data = load_from_cache(cache_key, max_age_hours=20)
+    if cached_data is not None:
+        return pd.DataFrame(cached_data)
+
+    try:
+        raw_df = yf.download(symbol, period=period, progress=False, auto_adjust=False)
+    except Exception:
+        return pd.DataFrame()
+
+    if raw_df.empty:
+        return pd.DataFrame()
+
+    if isinstance(raw_df.columns, pd.MultiIndex):
+        raw_df.columns = raw_df.columns.get_level_values(0)
+
+    df = raw_df[["Open", "High", "Low", "Close", "Volume"]].copy()
+    df.columns = ["open", "high", "low", "close", "volume"]
+    df.index.name = "date"
     df = df.reset_index()
-    df = df.sort_values("date").reset_index(drop=True)
+    df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+    df = df.dropna(subset=["open", "high", "low", "close"]).sort_values("date").reset_index(drop=True)
+
+    save_to_cache(cache_key, df.to_dict(orient="records"))
     return df
+
+
+if __name__ == "__main__":
+    raw = get_daily_stock_data("BTDR")
+    if "Time Series (Daily)" in raw:
+        print(clean_stock_data(raw).tail())
