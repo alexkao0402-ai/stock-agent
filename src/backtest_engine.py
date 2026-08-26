@@ -19,18 +19,38 @@ class BacktestConfig:
 
 def _buy(cash, open_price, cfg):
     execution_price = open_price * (1 + cfg.slippage_pct)
-    shares = cash * (1 - cfg.transaction_cost_pct) / execution_price
-    return shares, execution_price
+    shares = cash / (execution_price * (1 + cfg.transaction_cost_pct))
+    transaction_cost = shares * execution_price * cfg.transaction_cost_pct
+    return shares, execution_price, transaction_cost
 
 
 def _sell(shares, raw_price, cfg):
     execution_price = raw_price * (1 - cfg.slippage_pct)
-    cash = shares * execution_price * (1 - cfg.transaction_cost_pct)
-    return cash, execution_price
+    gross = shares * execution_price
+    transaction_cost = gross * cfg.transaction_cost_pct
+    cash = gross - transaction_cost
+    return cash, execution_price, transaction_cost
 
 
-def run_backtest(df: pd.DataFrame, config: Optional[BacktestConfig] = None):
-    cfg = config or BacktestConfig()
+def run_backtest(df: pd.DataFrame, *args, config: Optional[BacktestConfig] = None):
+    """Run one long-only strategy through the shared T+1 execution engine.
+
+    Supports the V2 form ``run_backtest(df, config)`` and the research form
+    ``run_backtest(df, symbol, strategy_name, config)``.
+    """
+    symbol = None
+    strategy_name = "Strategy"
+    if args and isinstance(args[0], str):
+        symbol = args[0]
+        strategy_name = args[1] if len(args) > 1 else strategy_name
+        cfg = args[2] if len(args) > 2 else (config or BacktestConfig())
+    else:
+        cfg = args[0] if args else (config or BacktestConfig())
+    df = df.copy()
+    if "signal" not in df.columns and {"entry_signal", "exit_signal"}.issubset(df.columns):
+        df["signal"] = None
+        df.loc[df["entry_signal"].astype(bool), "signal"] = "buy"
+        df.loc[df["exit_signal"].astype(bool), "signal"] = "sell"
     required = {"date", "open", "high", "low", "close", "signal"}
     missing = required.difference(df.columns)
     if missing:
@@ -62,7 +82,7 @@ def run_backtest(df: pd.DataFrame, config: Optional[BacktestConfig] = None):
         if i > 0:
             prev = data.iloc[i - 1]
             if prev["signal"] == "sell" and shares > 0:
-                cash, px = _sell(shares, current_open, cfg)
+                cash, px, transaction_cost = _sell(shares, current_open, cfg)
                 trades.append({
                     "signal_date": prev["date"],
                     "execution_date": current_date,
@@ -70,11 +90,12 @@ def run_backtest(df: pd.DataFrame, config: Optional[BacktestConfig] = None):
                     "action": "sell",
                     "execution_price": px,
                     "shares": shares,
+                    "transaction_cost": transaction_cost,
                     "reason": "strategy_signal",
                 })
                 shares, entry_price, highest_known, entry_signal_date = 0.0, None, None, None
             elif prev["signal"] == "buy" and cash > 0:
-                shares, px = _buy(cash, current_open, cfg)
+                shares, px, transaction_cost = _buy(cash, current_open, cfg)
                 cash, entry_price, highest_known, entry_signal_date = 0.0, px, px, prev["date"]
                 trades.append({
                     "signal_date": prev["date"],
@@ -83,6 +104,7 @@ def run_backtest(df: pd.DataFrame, config: Optional[BacktestConfig] = None):
                     "action": "buy",
                     "execution_price": px,
                     "shares": shares,
+                    "transaction_cost": transaction_cost,
                     "reason": "strategy_signal",
                 })
 
@@ -98,7 +120,7 @@ def run_backtest(df: pd.DataFrame, config: Optional[BacktestConfig] = None):
                     raw_exit = None
 
                 if raw_exit is not None:
-                    cash, px = _sell(shares, raw_exit, cfg)
+                    cash, px, transaction_cost = _sell(shares, raw_exit, cfg)
                     trades.append({
                         "signal_date": entry_signal_date,
                         "execution_date": current_date,
@@ -106,6 +128,7 @@ def run_backtest(df: pd.DataFrame, config: Optional[BacktestConfig] = None):
                         "action": "sell",
                         "execution_price": px,
                         "shares": shares,
+                        "transaction_cost": transaction_cost,
                         "reason": f"take_profit_{cfg.take_profit_pct:g}pct",
                     })
                     shares, entry_price, highest_known, entry_signal_date = 0.0, None, None, None
@@ -123,7 +146,7 @@ def run_backtest(df: pd.DataFrame, config: Optional[BacktestConfig] = None):
                     raw_exit = None
 
                 if raw_exit is not None:
-                    cash, px = _sell(shares, raw_exit, cfg)
+                    cash, px, transaction_cost = _sell(shares, raw_exit, cfg)
                     trades.append({
                         "signal_date": entry_signal_date,
                         "execution_date": current_date,
@@ -131,6 +154,7 @@ def run_backtest(df: pd.DataFrame, config: Optional[BacktestConfig] = None):
                         "action": "sell",
                         "execution_price": px,
                         "shares": shares,
+                        "transaction_cost": transaction_cost,
                         "reason": f"trailing_{cfg.trailing_pct:g}pct",
                     })
                     shares, entry_price, highest_known, entry_signal_date = 0.0, None, None, None
@@ -149,8 +173,11 @@ def run_backtest(df: pd.DataFrame, config: Optional[BacktestConfig] = None):
         })
 
     equity_curve = pd.DataFrame(equity_rows)
+    equity_curve["equity"] = equity_curve["portfolio_value"]
     final_value = float(equity_curve["portfolio_value"].iloc[-1])
-    return {
+    result = {
+        "symbol": symbol,
+        "strategy": strategy_name,
         "initial_capital": cfg.initial_capital,
         "final_value": round(final_value, 2),
         "total_return_pct": round((final_value / cfg.initial_capital - 1) * 100, 2),
@@ -159,9 +186,25 @@ def run_backtest(df: pd.DataFrame, config: Optional[BacktestConfig] = None):
         "slippage_pct": cfg.slippage_pct,
         "trades": trades,
         "still_holding_shares": shares > 0,
+        "open_position": shares > 0,
+        "open_shares": shares,
         "equity_curve": equity_curve,
         "exit_mode": cfg.exit_mode,
+        "exposure_pct": float(equity_curve["position"].mean() * 100),
     }
+    for trade in result["trades"]:
+        trade.setdefault("symbol", symbol)
+        trade.setdefault("strategy", strategy_name)
+    return result
+
+
+def run_buy_and_hold(df, symbol, config: Optional[BacktestConfig] = None):
+    """Buy at the first available next-session open and hold through the end."""
+    data = df.copy().sort_values("date").reset_index(drop=True)
+    data["signal"] = None
+    if len(data) > 1:
+        data.loc[0, "signal"] = "buy"
+    return run_backtest(data, symbol, "Buy & Hold", config or BacktestConfig())
 
 
 def calculate_buy_and_hold(

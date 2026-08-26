@@ -2,6 +2,7 @@
 # 這個檔案負責處理「把股價資料 + 新聞資料 + 公司基本面資料交給 AI 分析」的功能
 
 import os
+import re
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
@@ -123,7 +124,27 @@ def generate_report(symbol, df, news_list=None, overview=None):
 - 如果某個價格波動找不到對應的新聞可以解釋，請誠實說明「未找到明確對應消息」，不要臆測捏造原因
 - 價格區間是「基於歷史波動幅度與現有消息面的粗略推估」，絕對不要用「將會達到」「保證」這類肯定語氣，要用「可能」「傾向」「若條件成立」這類語氣
 - 進場區、停利區、失效價位是「研究性質的參考區間」，不是明確的買賣訊號，請在這部分結尾明確提醒讀者：這不是投資建議，實際操作應自行判斷並考量自身風險承受度
-- 這整份報告只是研究觀察與情境推演，不是投資建議，也不是精確預測"""
+- 這整份報告只是研究觀察與情境推演，不是投資建議，也不是精確預測
+
+輸出時，請先放以下結構化註解，再接續完整報告。註解中的數字必須與後方報告完全一致：
+<!--STRUCTURED_JSON
+{{
+  "current_price": {float(df['close'].iloc[-1])},
+  "bull_low": 數字或null,
+  "bull_high": 數字或null,
+  "base_low": 數字或null,
+  "base_high": 數字或null,
+  "bear_low": 數字或null,
+  "bear_high": 數字或null,
+  "entry_zone_low": 數字或null,
+  "entry_zone_high": 數字或null,
+  "take_profit_low": 數字或null,
+  "take_profit_high": 數字或null,
+  "invalidation_down": 數字或null,
+  "invalidation_up": 數字或null
+}}
+-->
+不要用 Markdown code fence 包住這個註解。"""
 
     message = client.messages.create(
         model="claude-sonnet-4-5",
@@ -151,6 +172,18 @@ def extract_structured_data(symbol, current_price, report_text):
     回傳：一個 Python 字典（如果解析失敗，回傳 None）
     """
 
+    embedded_match = re.search(
+        r"<!--STRUCTURED_JSON\s*(\{.*?\})\s*-->",
+        report_text,
+        flags=re.DOTALL,
+    )
+    if embedded_match:
+        try:
+            return json.loads(embedded_match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # 舊報告沒有內嵌 JSON 時，才使用第二次 AI 呼叫維持相容性。
     extraction_prompt = f"""以下是一份關於 {symbol} 的股票研究報告：
 
 {report_text}

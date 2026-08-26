@@ -1,35 +1,30 @@
 # Project Structure
 
 ```text
-AI_Stock_Research_clean/
+stock-agent/
 ├── app.py
 ├── main.py
-├── README.md
-├── PROJECT_STRUCTURE.md
-├── requirements.txt
-├── .gitignore
-├── .env.example
 ├── src/
-│   ├── __init__.py
+│   ├── indicators.py
+│   ├── backtest_engine.py
+│   ├── performance.py
+│   ├── regime_analysis.py
 │   ├── stock_data.py
 │   ├── ai_analysis.py
-│   ├── cache_utils.py
 │   ├── prediction_tracker.py
-│   ├── strategy_v1.py
-│   ├── regime_analysis.py
-│   └── walk_forward.py
-├── experiments/
-│   └── ablation_study.py
+│   ├── cache_utils.py
+│   └── strategies/
+│       ├── trend.py
+│       ├── momentum.py
+│       └── mean_reversion.py
+├── tests/
+│   └── test_research_system.py
 ├── docs/
 │   └── RESEARCH_FINDINGS.md
 └── legacy/
-    └── strategy.py
+    ├── ablation_study.py
+    ├── strategy.py
+    └── strategy_v1.py
 ```
 
-## Directory roles
-
-- `src/`: active application and Strategy V1 modules.
-- `experiments/`: research-only experiments that are not production entry points.
-- `docs/`: durable research notes and findings.
-- `legacy/`: superseded implementations retained for comparison; do not use them in the formal research pipeline.
-- `cache/` and `predictions/`: runtime output directories, intentionally excluded from Git.
+Active strategies produce close-based signals only. `backtest_engine.py` exclusively owns execution, costs, trade records, cash, shares, and equity curves. `performance.py` exclusively owns metric definitions. Archived V1 material is not imported by the Streamlit application.
