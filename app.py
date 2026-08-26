@@ -397,12 +397,23 @@ if analysis_payload:
             st.dataframe(short_df.sort_values("date", ascending=False), use_container_width=True, hide_index=True)
 
         st.subheader("歷史預測")
+        current_predictions = list_predictions(symbol)
+        all_predictions = list_predictions()
+        current_scope_label = f"目前股票（{len(current_predictions)}）"
+        all_scope_label = f"全部股票（{len(all_predictions)}）"
         history_scope = st.segmented_control(
             "歷史範圍",
-            ["目前股票", "全部股票"],
-            default="目前股票",
+            [current_scope_label, all_scope_label],
+            default=current_scope_label,
+            key=f"history_scope_{symbol}",
         )
-        predictions = list_predictions(symbol if history_scope != "全部股票" else None)
+        showing_all = history_scope == all_scope_label
+        predictions = all_predictions if showing_all else current_predictions
+        if showing_all:
+            ticker_count = len({record.get("ticker") for record in predictions})
+            st.caption(f"目前顯示全部 {len(predictions)} 筆紀錄，共 {ticker_count} 支股票。")
+        else:
+            st.caption(f"目前只顯示 {symbol} 的 {len(predictions)} 筆紀錄。")
         scorecard_records = [record for record in predictions if record.get("strategy_validation")]
         if scorecard_records:
             st.markdown("#### 訊號後跑贏 SPY 統計")
@@ -418,6 +429,7 @@ if analysis_payload:
                 "選擇預測紀錄",
                 range(len(predictions)),
                 format_func=lambda i: f"{predictions[i]['ticker']} — {predictions[i]['timestamp']}",
+                key=f"prediction_record_{symbol}_{'all' if showing_all else 'current'}",
             )
             record = predictions[index]
             st.caption(f"Market Regime at prediction: {record.get('market_regime', '舊紀錄未保存')}")
