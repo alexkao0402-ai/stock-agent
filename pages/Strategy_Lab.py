@@ -104,6 +104,7 @@ if not portfolio_regimes.empty:
             width="stretch",
             hide_index=True,
         )
+        st.page_link("pages/Cross_Sectional_Details.py", label="查看每次換股、每月損益與全部成交明細", icon="🔄")
 
 st.subheader("2 · Strategy × Stock Matrix")
 criterion = st.selectbox(

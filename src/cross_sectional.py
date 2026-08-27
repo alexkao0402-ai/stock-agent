@@ -41,6 +41,7 @@ def cross_sectional_momentum_backtest(
     pending_rebalance: dict | None = None
     equity_rows = []
     trades = []
+    rebalance_log = []
 
     for date_i, date in enumerate(dates):
         day = panel[panel["date"] == date].set_index("symbol")
@@ -49,6 +50,8 @@ def cross_sectional_momentum_backtest(
         if pending_rebalance is not None:
             targets = [symbol for symbol in pending_rebalance["targets"] if symbol in available]
             signal_date = pending_rebalance["signal_date"]
+            holdings_before = sorted(shares)
+            trade_start = len(trades)
             pretrade_value = cash + sum(
                 quantity * float(day.loc[symbol, "open"])
                 for symbol, quantity in shares.items()
@@ -82,6 +85,21 @@ def cross_sectional_momentum_backtest(
                     shares[symbol] = shares.get(symbol, 0.0) + buy_quantity
                     trades.append({"signal_date": signal_date, "execution_date": date, "date": date, "symbol": symbol, "strategy": "Cross-Sectional Momentum", "action": "BUY", "execution_price": execution_price, "shares": buy_quantity, "notional": notional, "transaction_cost": commission, "reason": "Top 20% by trailing 20D return"})
             shares = {symbol: quantity for symbol, quantity in shares.items() if quantity > 1e-10}
+            new_trades = trades[trade_start:]
+            rebalance_log.append({
+                "signal_date": signal_date,
+                "execution_date": date,
+                "market_regime": pending_rebalance["market_regime"],
+                "holdings_before": holdings_before,
+                "targets": sorted(targets),
+                "holdings_after": sorted(shares),
+                "bought": sorted({trade["symbol"] for trade in new_trades if trade["action"] == "BUY"}),
+                "sold": sorted({trade["symbol"] for trade in new_trades if trade["action"] == "SELL"}),
+                "transaction_cost": float(sum(trade["transaction_cost"] for trade in new_trades)),
+                "turnover_notional": float(sum(trade["notional"] for trade in new_trades)),
+                "pretrade_value": float(pretrade_value),
+                "rankings": pending_rebalance["rankings"],
+            })
             pending_rebalance = None
 
         close_value = cash + sum(
@@ -101,7 +119,24 @@ def cross_sectional_momentum_backtest(
                 ]
                 count = max(1, math.ceil(len(price_data) * top_fraction))
                 targets = eligible.nlargest(count, "return_20d").index.tolist() if spy_bull else []
-                pending_rebalance = {"signal_date": date, "targets": targets}
+                ranking = day.sort_values("return_20d", ascending=False)
+                rankings = [
+                    {
+                        "rank": rank,
+                        "symbol": symbol,
+                        "return_20d_pct": float(row["return_20d"] * 100),
+                        "above_ma200": bool(pd.notna(row["ma200"]) and row["close"] > row["ma200"]),
+                        "selected": symbol in targets,
+                    }
+                    for rank, (symbol, row) in enumerate(ranking.iterrows(), start=1)
+                    if pd.notna(row["return_20d"])
+                ]
+                pending_rebalance = {
+                    "signal_date": date,
+                    "targets": targets,
+                    "market_regime": "Bull" if spy_bull else "Bear",
+                    "rankings": rankings,
+                }
 
     curve = pd.DataFrame(equity_rows)
     return {
@@ -111,6 +146,7 @@ def cross_sectional_momentum_backtest(
         "final_value": float(curve["equity"].iloc[-1]),
         "equity_curve": curve,
         "trades": trades,
+        "rebalance_log": rebalance_log,
         "open_position": bool(shares),
         "open_holdings": sorted(shares),
         "exposure_pct": 100 * float((curve["holdings"] > 0).mean()),
