@@ -1,0 +1,5 @@
+Time Period,Market Regime,Start,End,Return %,B&H Return %,SPY Return %,Alpha vs B&H %,Alpha vs SPY %,Sharpe,Sortino,Max Drawdown %,Win Rate %,Outperformance vs B&H %,Outperformance vs SPY %,Trades,Exposure %,Sample Size,Strategy,Stock
+Full History,Bull,2022-08-17,2026-08-26,201.319994,193.014804,68.772927,8.305190,132.547067,1.326863,2.085048,-20.381150,,48.763251,51.472320,70,100.000000,849,Cross-Sectional Momentum,10-stock portfolio
+Full History,Bear,2022-06-14,2026-04-08,18.662094,47.271907,28.245063,-28.609813,-9.582969,1.381023,1.349668,-9.759129,,50.731707,52.682927,0,100.000000,205,Cross-Sectional Momentum,10-stock portfolio
+Recent OOS,Bull,2025-05-22,2026-08-26,49.280333,32.148248,27.873695,17.132085,21.406638,1.496512,2.417361,-20.381150,,51.147541,48.852459,26,100.000000,305,Cross-Sectional Momentum,10-stock portfolio
+Recent OOS,Bear,2026-03-23,2026-04-08,5.426559,7.029025,4.230849,-1.602467,1.195710,3.120951,7.120014,-7.734562,,41.666667,58.333333,0,100.000000,12,Cross-Sectional Momentum,10-stock portfolio

@@ -2,10 +2,34 @@ import unittest
 
 import pandas as pd
 
-from src.strategy_lab import research_verdict, strategy_summary
+from src.strategy_lab import _conditional_metrics, _regime_calendar, research_verdict, strategy_summary
 
 
 class StrategyLabTests(unittest.TestCase):
+    def test_regime_uses_only_trailing_200_closes(self):
+        spy = pd.DataFrame({"date": pd.date_range("2020-01-01", periods=202), "close": [100.0] * 200 + [101.0, 99.0]})
+        regimes = _regime_calendar(spy)
+        self.assertTrue(regimes["Market Regime"].iloc[:199].isna().all())
+        self.assertEqual(regimes.iloc[200]["Market Regime"], "Bull")
+        self.assertEqual(regimes.iloc[201]["Market Regime"], "Bear")
+
+    def test_conditional_metrics_separate_daily_sample_and_completed_trades(self):
+        dates = pd.date_range("2020-01-01", periods=6)
+        curve = pd.DataFrame({"date": dates, "equity": [100, 101, 102, 101, 103, 104], "position": [0, 1, 1, 0, 1, 0]})
+        result = {
+            "equity_curve": curve,
+            "trades": [
+                {"action": "BUY", "signal_date": dates[0], "execution_price": 10, "shares": 10, "transaction_cost": 0},
+                {"action": "SELL", "signal_date": dates[2], "execution_price": 11, "shares": 10, "transaction_cost": 0},
+            ],
+        }
+        benchmark = {"equity_curve": pd.DataFrame({"date": dates, "equity": [100, 100, 101, 101, 102, 102], "position": 1})}
+        calendar = pd.DataFrame({"date": dates, "Market Regime": ["Bull", "Bull", "Bear", "Bear", "Bull", "Bull"]})
+        row = _conditional_metrics(result, benchmark, benchmark, calendar, "Full History", "Bull")
+        self.assertEqual(row["Sample Size"], 3)  # first pct-change row onward
+        self.assertEqual(row["Trades"], 1)
+        self.assertEqual(row["Win Rate %"], 100)
+
     def test_summary_uses_cross_stock_median_and_beat_rate(self):
         matrix = pd.DataFrame([
             {"Stock": "A", "Strategy": "Momentum", "Alpha vs B&H %": 10, "Alpha vs SPY %": 8, "Sharpe": 1.2, "Max Drawdown %": -10, "OOS Alpha vs B&H %": 4},
