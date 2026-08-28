@@ -17,6 +17,10 @@ ENV/
 cache/
 predictions/
 signal_snapshots/
+live_forward_inputs/
+live_forward_signals/
+live_forward_runs/
+paper_ledger/
 logs/
 *.log
 

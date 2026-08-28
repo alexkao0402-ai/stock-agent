@@ -94,6 +94,48 @@ The command writes one immutable, schema-versioned file per market date under
 `signal_snapshots/`. Re-running the same date never overwrites the original
 signals. The runtime directory is excluded from Git.
 
+## Frozen V12 free live inputs
+
+The forward paper test does not require a paid market-data key. After the US
+regular session closes, capture the current company-level top-ten universe and
+the raw/adjusted price history with:
+
+```bash
+python -m scripts.capture_v12_live_inputs
+```
+
+The capture combines Yahoo Finance market-cap and price data with Nasdaq's
+current non-ETF symbol directories and SEC CIK/incorporation records. If SEC
+blocks a shared/cloud IP, an explicitly recorded Yahoo company-profile fallback
+provides the company ID and domicile instead. Multiple share classes such as
+GOOG/GOOGL are consolidated by company ID. Non-US incorporated
+issuers are excluded so the live definition stays aligned with the frozen CRSP
+US-common-stock universe.
+
+Each date is written once under `live_forward_inputs/YYYY-MM-DD/` with separate
+universe and price CSV files plus a SHA-256 manifest. An existing date is never
+overwritten. If source coverage is incomplete, the command fails closed instead
+of falling back to the old fixed universe. The command also refuses to create an
+official record before the final business day of the month. Its frozen V12
+decision is written separately to `live_forward_signals/YYYY-MM-DD/v12_signal.json`.
+V12 still executes at T+1 open, while T+2 remains the forward challenger; the
+signal file remains in an awaiting-execution state until those future opens exist.
+The same command also creates an immutable evidence package and pending
+V12/SPY/QQQ paper-account events. It refuses official evidence if any critical
+forward file is uncommitted. After an execution session closes, record exact raw
+open fills with:
+
+```bash
+python -m scripts.process_v12_paper_open --execution-date YYYY-MM-DD
+```
+
+See `docs/V12_FORWARD_OPERATING_CONTRACT.md` for accounting, calendar,
+corporate-action and retry definitions.
+
+The future paper-trading architecture and gated IBKR Paper phases are documented
+in `docs/V12_ROADMAP.md`. IBKR is not active, and the roadmap does not authorize
+live trading or change the first legal Frozen V12 forward signal.
+
 ## App loading behavior
 
 The main research areas use a single page selector rather than eagerly computed
