@@ -12,6 +12,11 @@ import yfinance as yf
 
 from src.ai_analysis import generate_compact_summary, has_anthropic_key
 from src.config import get_secret
+from src.dashboard_cloud_snapshot import (
+    DashboardSnapshotError,
+    load_signed_snapshot,
+    load_supabase_snapshot,
+)
 from src.dashboard_read_model import DEFAULT_LEDGER_PATH, build_dashboard_snapshot
 from src.stock_data import (
     clean_stock_data,
@@ -42,7 +47,7 @@ def _inject_style() -> None:
         :root { --panel:#111827; --line:#263247; --muted:#93a2b7; --cyan:#35c9ff; --green:#39e5a5; --amber:#f5c451; --red:#ff6b75; }
         header[data-testid="stHeader"] { background: rgba(6,10,18,.75); backdrop-filter: blur(14px); }
         .stApp { background: radial-gradient(circle at 78% 0%, rgba(53,201,255,.08), transparent 30%), #070b13; color:#f7f9fc; }
-        .block-container { max-width:1240px; padding-top:2rem; padding-bottom:4rem; }
+        .block-container { max-width:1240px; padding-top:4.5rem; padding-bottom:4rem; }
         section[data-testid="stSidebar"] { background:#090e18; border-right:1px solid #202b3d; }
         section[data-testid="stSidebar"] [data-testid="stSidebarNav"] { padding-top:.5rem; }
         .eyebrow { color:var(--cyan); font-size:.78rem; font-weight:700; letter-spacing:.13em; text-transform:uppercase; }
@@ -56,6 +61,12 @@ def _inject_style() -> None:
         .empty-state { padding:3rem 1.25rem; border:1px dashed #344157; border-radius:18px; text-align:center; background:rgba(17,24,39,.55); }
         .empty-state h3 { margin:0 0 .45rem; }
         .empty-state p { color:var(--muted); margin:0; }
+        .overview-card-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin:.15rem 0 1.25rem; }
+        .overview-card { min-width:0; min-height:230px; padding:1.35rem; border:1px solid var(--line); border-radius:16px; background:linear-gradient(145deg,rgba(17,24,39,.92),rgba(8,13,23,.96)); display:flex; flex-direction:column; box-sizing:border-box; }
+        .overview-card-kicker { color:var(--cyan); font-size:.72rem; font-weight:750; letter-spacing:.12em; margin-bottom:.45rem; }
+        .overview-card-title { color:#f7f9fc; font-size:1.2rem; font-weight:720; min-height:2rem; }
+        .overview-card-value { color:#f7f9fc; font-size:1.7rem; font-weight:720; line-height:1.15; margin-top:1.4rem; }
+        .overview-card-detail { color:var(--muted); font-size:.9rem; line-height:1.65; margin-top:auto; padding-top:1rem; }
         .read-only { color:#9aa9bd; font-size:.86rem; border-left:3px solid var(--cyan); padding:.45rem .75rem; margin:.6rem 0 1.2rem; }
         div[data-testid="stMetric"] { min-height:126px; border:1px solid var(--line); border-radius:16px; padding:1rem; background:linear-gradient(145deg,rgba(24,34,51,.94),rgba(12,18,30,.96)); box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 18px 42px rgba(0,0,0,.16); }
         div[data-testid="stMetricLabel"] { color:#aab5c5; }
@@ -67,7 +78,9 @@ def _inject_style() -> None:
         .event-meta { color:var(--muted); font-size:.82rem; margin-top:.35rem; }
         .footer-note { color:#7f8da2; text-align:center; font-size:.82rem; margin-top:2.5rem; }
         @media (max-width:720px) {
-          .block-container { padding:1rem .7rem 3rem; }
+          .block-container { padding:4.25rem .7rem 3rem; }
+          .overview-card-grid { grid-template-columns:1fr; gap:.75rem; }
+          .overview-card { min-height:190px; }
           div[data-testid="stMetric"] { min-height:104px; padding:.8rem; }
           div[data-testid="stMetricValue"] { font-size:1.35rem; overflow-wrap:anywhere; }
           .paper-banner { font-size:.78rem; }
@@ -129,7 +142,41 @@ def _ledger_path() -> Path:
 
 
 def _dashboard_state() -> dict[str, Any]:
-    return build_dashboard_snapshot(_ledger_path())
+    supabase_url = get_secret("SUPABASE_URL")
+    supabase_key = get_secret("SUPABASE_SECRET_KEY") or get_secret(
+        "SUPABASE_SERVICE_ROLE_KEY"
+    )
+    remote_source = get_secret("V12_DASHBOARD_SNAPSHOT_URL") or get_secret(
+        "V12_DASHBOARD_SNAPSHOT_PATH"
+    )
+    if not supabase_url and not supabase_key and not remote_source:
+        return build_dashboard_snapshot(_ledger_path())
+    try:
+        if bool(supabase_url) != bool(supabase_key):
+            raise DashboardSnapshotError("Supabase URL and secret key must both be configured")
+        if supabase_url and supabase_key:
+            return load_supabase_snapshot(
+                supabase_url,
+                supabase_key,
+                get_secret("V12_DASHBOARD_SYNC_SECRET") or "",
+                bucket=get_secret("V12_DASHBOARD_SUPABASE_BUCKET") or "v12-dashboard",
+                object_path=get_secret("V12_DASHBOARD_SUPABASE_OBJECT")
+                or "v12_dashboard.json",
+            )
+        return load_signed_snapshot(
+            remote_source,
+            get_secret("V12_DASHBOARD_SYNC_SECRET") or "",
+        )
+    except DashboardSnapshotError as exc:
+        state = build_dashboard_snapshot(Path("__cloud_snapshot_unavailable__.sqlite3"))
+        state.update({
+            "health_status": "ERROR",
+            "health_label": "同步異常",
+            "trading_blocked": True,
+            "integrity_error": str(exc),
+            "warnings": ["雲端 Dashboard Snapshot 無法驗證"],
+        })
+        return state
 
 
 def _yahoo_company_events(symbol: str) -> dict[str, list[dict[str, str]]]:
@@ -188,6 +235,8 @@ def render_overview() -> None:
     _header("Portfolio", "總覽 / 模擬交易", "只呈現 Frozen V12 的正式 Forward 證據，不使用回測數字填補空白。")
     _paper_banner()
     state = _dashboard_state()
+    if state["integrity_error"]:
+        st.error(f"Dashboard 資料同步異常：{state['integrity_error']}")
     columns = st.columns(5)
     columns[0].metric("Portfolio Value", _money(state["portfolio_value"]))
     columns[1].metric("累積報酬", _pct(state["cumulative_return"]))
@@ -219,31 +268,36 @@ def render_overview() -> None:
         )
         st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
 
-    left, right = st.columns([1.35, 1])
-    with left:
-        st.markdown("### 目前持股與現金")
-        if state["holdings"]:
-            holdings = pd.DataFrame(state["holdings"]).rename(columns={"ticker": "股票", "shares": "股數", "average_cost": "平均成本", "target_weight": "目標權重"})
-            holdings["目標權重"] = holdings["目標權重"].map(lambda value: "—" if pd.isna(value) else f"{value:.1%}")
-            st.dataframe(holdings, width="stretch", hide_index=True)
-            st.metric("現金", _money(state["cash"]))
-        else:
-            st.info("目前沒有正式 Forward 持股。")
-    with right:
-        st.markdown("### 最新 V12 Signal")
-        if state["latest_signal"] is None:
-            st.info("尚未產生正式訊號。")
-        else:
-            st.metric("Signal Date", state["signal_date"] or "—")
-            st.write(f"**SPY Regime：** {state['market_regime'] or '—'}")
-            st.write(f"**V7：** {', '.join(state['v7_selected']) or '—'}")
-            st.write(f"**V8：** {', '.join(state['v8_selected']) or '—'}")
-            if state["target_weights"]:
-                st.write("**V12 權重：** " + " · ".join(f"{ticker} {weight:.0%}" for ticker, weight in state["target_weights"].items()))
-        st.markdown("### T+1 執行狀態")
-        st.metric("狀態", state["execution_status"])
-        if state["execution_date"]:
-            st.caption(f"預定執行日：{state['execution_date']}")
+    if state["holdings"]:
+        portfolio_value = f'{len(state["holdings"])} 檔持股'
+        lines = []
+        for position in state["holdings"]:
+            weight = position.get("target_weight")
+            weight_text = "—" if weight is None else f"{float(weight):.0%}"
+            lines.append(f'{html.escape(str(position.get("ticker") or "—"))} · {weight_text}')
+        portfolio_detail = f'{"<br>".join(lines)}<br>現金 · {_money(state["cash"])}'
+    else:
+        portfolio_value = "0 檔持股"
+        portfolio_detail = "等待第一筆正式 Forward 配置<br>現金 · —"
+    if state["latest_signal"] is None:
+        signal_value = "尚未產生"
+        signal_detail = "等待正式月末訊號<br>SPY Regime · —"
+    else:
+        signal_value = html.escape(state["signal_date"] or "—")
+        selections = " · ".join(f"{ticker} {weight:.0%}" for ticker, weight in state["target_weights"].items()) or "—"
+        signal_detail = f'SPY Regime · {html.escape(state["market_regime"] or "—")}<br>{html.escape(selections)}'
+    execution_value = html.escape(state["execution_status"])
+    execution_detail = f'預定執行日 · {html.escape(state["execution_date"] or "—")}<br>執行規則 · T+1 Open'
+    st.markdown(
+        f'''
+        <div class="overview-card-grid">
+          <section class="overview-card"><div class="overview-card-kicker">PORTFOLIO</div><div class="overview-card-title">目前持股與現金</div><div class="overview-card-value">{portfolio_value}</div><div class="overview-card-detail">{portfolio_detail}</div></section>
+          <section class="overview-card"><div class="overview-card-kicker">LATEST SIGNAL</div><div class="overview-card-title">最新 V12 訊號</div><div class="overview-card-value">{signal_value}</div><div class="overview-card-detail">{signal_detail}</div></section>
+          <section class="overview-card"><div class="overview-card-kicker">EXECUTION</div><div class="overview-card-title">T+1 執行</div><div class="overview-card-value">{execution_value}</div><div class="overview-card-detail">{execution_detail}</div></section>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
 
     if state["events"]:
         with st.expander("查看不可回寫的事件紀錄"):

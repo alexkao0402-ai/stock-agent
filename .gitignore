@@ -21,6 +21,7 @@ live_forward_inputs/
 live_forward_signals/
 live_forward_runs/
 paper_ledger/
+dashboard_exports/
 logs/
 *.log
 
