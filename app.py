@@ -1,27 +1,18 @@
-"""Streamlit interface for AI-assisted large-cap equity research."""
+"""Read-only Streamlit dashboard for Frozen V12 forward paper trading."""
+from __future__ import annotations
 
-import base64
 import html
-import re
 from pathlib import Path
+from typing import Any
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import yfinance as yf
 
-from src.ai_analysis import extract_structured_data, generate_report, has_anthropic_key
-from src.backtest_engine import BacktestConfig, run_backtest, run_buy_and_hold
-from src.cross_sectional import (
-    cross_sectional_momentum_backtest,
-    latest_cross_sectional_ranking,
-)
-from src.performance import calculate_equity_metrics, calculate_metrics, chronological_split_metrics
-from src.prediction_tracker import (
-    check_prediction_outcome,
-    enrich_prediction,
-    get_recent_prediction,
-    list_predictions,
-    save_prediction,
-)
+from src.ai_analysis import generate_compact_summary, has_anthropic_key
+from src.config import get_secret
+from src.dashboard_read_model import DEFAULT_LEDGER_PATH, build_dashboard_snapshot
 from src.stock_data import (
     clean_stock_data,
     get_company_overview,
@@ -30,496 +21,397 @@ from src.stock_data import (
     get_news_sentiment,
     has_alpha_vantage_key,
 )
-from src.strategies import (
-    mean_reversion_signals,
-    momentum_relative_strength_signals,
-)
 
 
-LARGE_CAP_UNIVERSE = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "AVGO", "JPM", "V", "WMT"]
-CONFIG = BacktestConfig(initial_capital=10_000, transaction_cost_pct=0.001, slippage_pct=0.0005)
-
-
-def asset_data_uri(filename):
-    """Embed a local visual asset so it also works when Streamlit is deployed."""
-    path = Path(__file__).parent / "assets" / filename
-    if not path.exists():
-        return ""
-    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
-
-
-def format_price_range(low, high):
-    """Use one currency marker so Streamlit does not parse the range as LaTeX."""
-    if low is None or high is None:
-        return "—"
-    return f"${low:,.2f}–{high:,.2f}"
-
-
-def extract_scenario_report(report_text, scenario):
-    """Return only the selected Bull/Base/Bear section from the AI report."""
-    normalized = str(report_text).replace("\\n", "\n")
-    labels = {
-        "中性": r"Base Case|中性情境",
-        "樂觀": r"Bull Case|樂觀情境",
-        "悲觀": r"Bear Case|悲觀情境",
-    }
-    pattern = rf"(?ims)^###\s*(?:{labels[scenario]})[^\n]*\n(.*?)(?=^###\s|^##\s|\Z)"
-    match = re.search(pattern, normalized)
-    return match.group(1).strip() if match else "這份報告沒有可分離的情境段落，請查看完整 AI 分析。"
+APP_TITLE = "V12 Forward Dashboard"
+COLORS = {"V12": "#39E5A5", "SPY": "#35C9FF", "QQQ": "#8A7CFF"}
 
 
 st.set_page_config(
-    page_title="AI Stock Research",
-    page_icon="📈",
+    page_title=APP_TITLE,
+    page_icon="◈",
     layout="wide",
     initial_sidebar_state="auto",
 )
-background_uri = asset_data_uri("metal-dashboard-background.png")
-st.markdown(
-    f"""
-    <style>
-    header[data-testid="stHeader"] {{display: none;}}
-    .stApp {{background: linear-gradient(180deg, rgba(5,8,12,.76), rgba(5,8,12,.94)), url("{background_uri}") center top / cover fixed;}}
-    .block-container {{max-width: 1180px; padding: 2rem 2rem 4rem; background: rgba(7,10,15,.84); border-left: 1px solid rgba(190,203,220,.14); border-right: 1px solid rgba(190,203,220,.14); box-shadow: 0 0 60px rgba(0,0,0,.42); backdrop-filter: blur(16px);}}
-    .hero {{padding: 1.2rem 0 1.5rem;}}
-    .hero h1 {{font-size: 2rem; margin: 0; letter-spacing: -.03em; color: #f4f7fb;}}
-    .hero p {{color: #aeb8c8; margin: .35rem 0 0;}}
-    div[data-testid="stMetric"] {{border: 1px solid rgba(190,203,220,.22); border-radius: 14px; padding: 1rem; background: linear-gradient(145deg, rgba(37,43,53,.78), rgba(12,16,23,.9)); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 12px 30px rgba(0,0,0,.2);}}
-    div[data-testid="stMetricValue"] {{font-size: clamp(1.4rem, 3vw, 2.2rem);}}
-    div[data-testid="stTabs"] button {{font-weight: 600;}}
-    div[data-testid="stDataFrame"] {{border: 1px solid rgba(128,128,128,.18); border-radius: 10px; max-width: 100%; overflow-x: auto;}}
-    .js-plotly-plot, .plot-container, .plotly {{max-width: 100% !important;}}
-    .section-note {{color: #8b95a7; font-size: .9rem; margin-top: -.5rem;}}
-    .quote-strip {{display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; padding: 1.35rem 1.5rem; margin: .75rem 0 1.25rem; border: 1px solid rgba(205,216,230,.28); border-radius: 16px; background: linear-gradient(110deg, rgba(43,50,61,.88), rgba(11,15,22,.94) 58%, rgba(29,38,49,.86)); box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 18px 40px rgba(0,0,0,.28);}}
-    .quote-company {{font-size: 1.5rem; font-weight: 700; color: #f5f7fa;}}
-    .quote-industry {{margin-top: .25rem; color: #9da9ba; font-size: .84rem; letter-spacing: .08em; text-transform: uppercase;}}
-    .quote-market {{display: flex; align-items: center; gap: 1.25rem; white-space: nowrap;}}
-    .quote-label {{font-size: .75rem; color: #95a1b2; letter-spacing: .08em;}}
-    .quote-price {{font-size: 2rem; font-weight: 650; line-height: 1.15; color: #f5f7fa;}}
-    .quote-change {{padding: .45rem .75rem; border-radius: 999px; font-weight: 650;}}
-    .quote-up {{color: #72e6a4; background: rgba(26,121,76,.28);}}
-    .quote-down {{color: #ff8d91; background: rgba(154,48,55,.28);}}
-    .stButton > button[kind="primary"] {{background: linear-gradient(135deg, #d8dee7, #788596) !important; color: #090c11 !important; border: 1px solid rgba(255,255,255,.42) !important; font-weight: 700; box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 8px 24px rgba(0,0,0,.28);}}
-    @media (max-width: 720px) {{.block-container {{padding: 1rem .75rem 3rem; border: 0;}} .hero {{padding-top: .5rem;}} .hero h1 {{font-size: 1.65rem;}} .quote-strip {{align-items: flex-start; flex-direction: column; gap: 1rem; padding: 1rem;}} .quote-market {{width: 100%; justify-content: space-between;}} .quote-price {{font-size: 1.75rem;}} div[data-testid="stMetric"] {{min-width: 0; padding: .8rem;}} div[data-testid="stMetricValue"] {{font-size: 1.35rem; overflow-wrap: anywhere;}}}}
-    </style>
-    <div class="hero">
-      <h1>AI Stock Research</h1>
-      <p>快速看懂公司、AI 情境與量化策略表現</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-from src.strategy_validation import (
-    current_signal,
-    equity_comparison,
-    fixed_horizon_validation,
-    strategy_scorecard,
-)
 
-search_col, button_col = st.columns([5, 1])
-with search_col:
-    symbol = st.text_input("股票代號", value="AAPL", placeholder="例如：AAPL、NVDA", label_visibility="collapsed").strip().upper()
-with button_col:
-    analyze_clicked = st.button("開始分析", type="primary", width="stretch")
-analysis_payload = st.session_state.get("analysis_payload")
-analysis_cache = st.session_state.setdefault("analysis_cache", {})
 
-if analyze_clicked:
-    if not symbol:
-        st.warning("Please enter a ticker.")
-        st.stop()
-
-    if symbol in analysis_cache:
-        analysis_payload = analysis_cache[symbol]
-        st.toast("已載入本次工作階段的分析快取")
-    else:
-        with st.status(f"正在分析 {symbol}", expanded=True) as status:
-            st.write("取得股價資料…")
-            raw_data = get_daily_stock_data(symbol)
-            data_source = "Alpha Vantage"
-            if "Time Series (Daily)" in raw_data:
-                short_df = clean_stock_data(raw_data)
-            else:
-                st.write("Alpha Vantage 無法使用，改用 yfinance 價格資料…")
-                short_df = get_long_history_stock_data(symbol, period="1y").tail(100).reset_index(drop=True)
-                data_source = "yfinance"
-            if short_df.empty:
-                status.update(label="股價資料載入失敗", state="error")
-                st.error("無法取得股價資料。請確認股票代號、網路連線或資料服務狀態。")
-                st.stop()
-
-            st.write("取得新聞與基本面…")
-            news = get_news_sentiment(symbol, limit=20)
-            overview = get_company_overview(symbol)
-
-            current_price = float(short_df["close"].iloc[-1])
-            recent_prediction = get_recent_prediction(symbol, max_age_hours=12)
-            if recent_prediction:
-                st.write("載入 12 小時內的 AI 分析快取…")
-                report = recent_prediction["full_report_text"]
-                structured_keys = (
-                    "current_price", "bull_low", "bull_high", "base_low", "base_high",
-                    "bear_low", "bear_high", "entry_zone_low", "entry_zone_high",
-                    "take_profit_low", "take_profit_high", "invalidation_down", "invalidation_up",
-                )
-                structured = {key: recent_prediction.get(key) for key in structured_keys}
-                # Reuse expensive AI text, but create a new immutable point-in-time record.
-                saved_path = save_prediction(symbol, current_price, structured, report)
-            else:
-                if has_anthropic_key():
-                    try:
-                        st.write("產生 AI 情境分析…")
-                        report = generate_report(symbol, short_df, news, overview)
-                        structured = extract_structured_data(symbol, current_price, report)
-                        saved_path = save_prediction(symbol, current_price, structured, report)
-                    except Exception as exc:
-                        report = "AI 情境分析暫時無法使用，價格與量化策略仍可正常查看。"
-                        structured = {}
-                        saved_path = None
-                        st.warning(f"AI 分析服務暫時失敗：{exc}")
-                else:
-                    report = "尚未設定 ANTHROPIC_API_KEY；價格與量化策略仍可正常查看。"
-                    structured = {}
-                    saved_path = None
-                    st.write("未設定 Anthropic Secret，略過 AI 情境分析。")
-
-            analysis_payload = {
-                "symbol": symbol,
-                "short_df": short_df,
-                "news": news,
-                "overview": overview,
-                "current_price": current_price,
-                "report": report,
-                "structured": structured,
-                "saved_path": saved_path,
-                "data_source": data_source,
-                "ai_available": saved_path is not None,
-            }
-            analysis_cache[symbol] = analysis_payload
-            status.update(label="分析完成", state="complete", expanded=False)
-    st.session_state["analysis_payload"] = analysis_payload
-
-if analysis_payload:
-    symbol = analysis_payload["symbol"]
-    short_df = analysis_payload["short_df"]
-    news = analysis_payload["news"]
-    overview = analysis_payload["overview"]
-    current_price = analysis_payload["current_price"]
-    report = analysis_payload["report"]
-    structured = analysis_payload["structured"]
-    saved_path = analysis_payload["saved_path"]
-    data_source = analysis_payload.get("data_source", "Alpha Vantage")
-    ai_available = analysis_payload.get("ai_available", True)
-
-    structured = structured or {}
-    company_name = overview.get("公司名稱", symbol) if overview else symbol
-    previous_close = float(short_df["close"].iloc[-2]) if len(short_df) > 1 else current_price
-    daily_change = current_price / previous_close - 1 if previous_close else 0.0
-    industry = overview.get("產業別", "大型股研究") if overview else "大型股研究"
-    change_class = "quote-up" if daily_change >= 0 else "quote-down"
-    change_arrow = "↑" if daily_change >= 0 else "↓"
+def _inject_style() -> None:
     st.markdown(
-        f"""
-        <div class="quote-strip">
-          <div>
-            <div class="quote-company">{html.escape(symbol)} · {html.escape(str(company_name))}</div>
-            <div class="quote-industry">{html.escape(str(industry))}</div>
-          </div>
-          <div class="quote-market">
-            <div>
-              <div class="quote-label">最新收盤</div>
-              <div class="quote-price">${current_price:,.2f}</div>
-            </div>
-            <div class="quote-change {change_class}">{change_arrow} {abs(daily_change):.2%}</div>
-          </div>
-        </div>
+        """
+        <style>
+        :root { --panel:#111827; --line:#263247; --muted:#93a2b7; --cyan:#35c9ff; --green:#39e5a5; --amber:#f5c451; --red:#ff6b75; }
+        header[data-testid="stHeader"] { background: rgba(6,10,18,.75); backdrop-filter: blur(14px); }
+        .stApp { background: radial-gradient(circle at 78% 0%, rgba(53,201,255,.08), transparent 30%), #070b13; color:#f7f9fc; }
+        .block-container { max-width:1240px; padding-top:2rem; padding-bottom:4rem; }
+        section[data-testid="stSidebar"] { background:#090e18; border-right:1px solid #202b3d; }
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] { padding-top:.5rem; }
+        .eyebrow { color:var(--cyan); font-size:.78rem; font-weight:700; letter-spacing:.13em; text-transform:uppercase; }
+        .page-title { font-size:clamp(1.8rem,4vw,2.7rem); font-weight:760; letter-spacing:-.04em; margin:.25rem 0 .2rem; }
+        .page-subtitle { color:var(--muted); max-width:760px; margin-bottom:1.5rem; }
+        .paper-banner { padding:.8rem 1rem; border:1px solid rgba(245,196,81,.48); border-radius:12px; color:var(--amber); background:rgba(245,196,81,.07); font-weight:750; letter-spacing:.08em; text-align:center; margin:.25rem 0 1.25rem; }
+        .status-badge { display:inline-flex; align-items:center; gap:.55rem; padding:.48rem .8rem; border-radius:999px; font-weight:750; border:1px solid currentColor; }
+        .status-normal { color:var(--green); background:rgba(57,229,165,.08); }
+        .status-watch { color:var(--amber); background:rgba(245,196,81,.08); }
+        .status-error { color:var(--red); background:rgba(255,107,117,.08); }
+        .empty-state { padding:3rem 1.25rem; border:1px dashed #344157; border-radius:18px; text-align:center; background:rgba(17,24,39,.55); }
+        .empty-state h3 { margin:0 0 .45rem; }
+        .empty-state p { color:var(--muted); margin:0; }
+        .read-only { color:#9aa9bd; font-size:.86rem; border-left:3px solid var(--cyan); padding:.45rem .75rem; margin:.6rem 0 1.2rem; }
+        div[data-testid="stMetric"] { min-height:126px; border:1px solid var(--line); border-radius:16px; padding:1rem; background:linear-gradient(145deg,rgba(24,34,51,.94),rgba(12,18,30,.96)); box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 18px 42px rgba(0,0,0,.16); }
+        div[data-testid="stMetricLabel"] { color:#aab5c5; }
+        div[data-testid="stMetricValue"] { font-size:clamp(1.35rem,2.7vw,2.05rem); }
+        div[data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:14px; overflow-x:auto; }
+        div[data-testid="stVerticalBlockBorderWrapper"] { border-color:var(--line) !important; background:rgba(17,24,39,.55); }
+        .event-card { border:1px solid var(--line); border-radius:14px; padding:1rem; background:rgba(17,24,39,.66); margin-bottom:.65rem; }
+        .event-card a { color:var(--cyan); text-decoration:none; }
+        .event-meta { color:var(--muted); font-size:.82rem; margin-top:.35rem; }
+        .footer-note { color:#7f8da2; text-align:center; font-size:.82rem; margin-top:2.5rem; }
+        @media (max-width:720px) {
+          .block-container { padding:1rem .7rem 3rem; }
+          div[data-testid="stMetric"] { min-height:104px; padding:.8rem; }
+          div[data-testid="stMetricValue"] { font-size:1.35rem; overflow-wrap:anywhere; }
+          .paper-banner { font-size:.78rem; }
+        }
+        </style>
         """,
         unsafe_allow_html=True,
     )
-    data_as_of = pd.to_datetime(short_df["date"].iloc[-1]).strftime("%Y/%m/%d")
-    st.caption(f"資料截至 {data_as_of} 收盤 · {data_source} · 非即時報價")
-    selected_page = st.segmented_control(
-        "研究頁面",
-        ["投資摘要", "策略回測", "公司資料"],
-        default="投資摘要",
-        label_visibility="collapsed",
-        key=f"research_page_{symbol}",
+
+
+def _header(eyebrow: str, title: str, subtitle: str) -> None:
+    st.markdown(
+        f'<div class="eyebrow">{html.escape(eyebrow)}</div>'
+        f'<div class="page-title">{html.escape(title)}</div>'
+        f'<div class="page-subtitle">{html.escape(subtitle)}</div>',
+        unsafe_allow_html=True,
     )
 
-    if selected_page == "投資摘要":
-        st.line_chart(short_df.set_index("date")[["close"]], height=380)
 
-        if not has_alpha_vantage_key():
-            st.info("尚未設定 ALPHAVANTAGE_API_KEY：目前使用 yfinance 價格；新聞與部分基本面可能無法顯示。")
-        if not ai_available:
-            st.warning("尚未設定 ANTHROPIC_API_KEY 或 AI 服務暫時不可用；AI 情境與參考價位未產生，量化策略頁仍可使用。")
+def _paper_banner() -> None:
+    st.markdown('<div class="paper-banner">FORWARD PAPER TRADING · NOT LIVE CAPITAL</div>', unsafe_allow_html=True)
 
-        entry, target, risk = st.columns(3)
-        entry.metric("參考進場", format_price_range(structured.get("entry_zone_low"), structured.get("entry_zone_high")))
-        target.metric("參考停利", format_price_range(structured.get("take_profit_low"), structured.get("take_profit_high")))
-        risk.metric("風險失效價", f"${structured.get('invalidation_down', '—')}")
 
-        st.markdown("#### AI 情境")
-        scenario = st.segmented_control(
-            "選擇情境",
-            ["中性", "樂觀", "悲觀"],
-            default="中性",
-            label_visibility="collapsed",
+def _status_badge(status: str, label: str) -> None:
+    css = {"NORMAL": "normal", "WATCH": "watch", "ERROR": "error"}.get(status, "watch")
+    st.markdown(f'<span class="status-badge status-{css}">● {html.escape(label)}</span>', unsafe_allow_html=True)
+
+
+def _money(value: float | None) -> str:
+    return "—" if value is None else f"${value:,.2f}"
+
+
+def _pct(value: float | None, *, points: bool = False) -> str:
+    if value is None:
+        return "—"
+    suffix = " pp" if points else "%"
+    return f"{value * 100:+.2f}{suffix}"
+
+
+def _number(value: Any, *, currency: bool = False) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    if abs(number) >= 1_000_000_000_000:
+        result = f"{number / 1_000_000_000_000:.2f}T"
+    elif abs(number) >= 1_000_000_000:
+        result = f"{number / 1_000_000_000:.2f}B"
+    elif abs(number) >= 1_000_000:
+        result = f"{number / 1_000_000:.2f}M"
+    else:
+        result = f"{number:,.2f}"
+    return f"${result}" if currency else result
+
+
+def _ledger_path() -> Path:
+    configured = get_secret("V12_LEDGER_PATH")
+    return Path(configured) if configured else DEFAULT_LEDGER_PATH
+
+
+def _dashboard_state() -> dict[str, Any]:
+    return build_dashboard_snapshot(_ledger_path())
+
+
+def _yahoo_company_events(symbol: str) -> dict[str, list[dict[str, str]]]:
+    earnings: list[dict[str, str]] = []
+    filings: list[dict[str, str]] = []
+    ticker = yf.Ticker(symbol)
+    try:
+        frame = ticker.get_earnings_dates(limit=4)
+        if isinstance(frame, pd.DataFrame) and not frame.empty:
+            for index, row in frame.head(4).iterrows():
+                earnings.append({
+                    "date": pd.Timestamp(index).strftime("%Y-%m-%d"),
+                    "estimate": _number(row.get("EPS Estimate")),
+                    "reported": _number(row.get("Reported EPS")),
+                    "surprise": _number(row.get("Surprise(%)")),
+                })
+    except Exception:
+        pass
+    try:
+        raw_filings = getattr(ticker, "sec_filings", None)
+        if callable(raw_filings):
+            raw_filings = raw_filings()
+        for item in (raw_filings or [])[:6]:
+            if not isinstance(item, dict):
+                continue
+            filings.append({
+                "date": str(item.get("date") or item.get("filingDate") or "")[:10],
+                "type": str(item.get("type") or item.get("formType") or "SEC Filing"),
+                "title": str(item.get("title") or item.get("description") or "公司申報"),
+                "url": str(item.get("edgarUrl") or item.get("url") or ""),
+            })
+    except Exception:
+        pass
+    return {"earnings": earnings, "filings": filings}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _market_payload(symbol: str) -> dict[str, Any]:
+    raw = get_daily_stock_data(symbol)
+    source = "Alpha Vantage"
+    if "Time Series (Daily)" in raw:
+        prices = clean_stock_data(raw)
+    else:
+        prices = get_long_history_stock_data(symbol, period="1y").tail(180).reset_index(drop=True)
+        source = "Yahoo Finance"
+    return {
+        "prices": prices,
+        "overview": get_company_overview(symbol),
+        "news": get_news_sentiment(symbol, limit=10),
+        "source": source,
+        **_yahoo_company_events(symbol),
+    }
+
+
+def render_overview() -> None:
+    _header("Portfolio", "總覽 / 模擬交易", "只呈現 Frozen V12 的正式 Forward 證據，不使用回測數字填補空白。")
+    _paper_banner()
+    state = _dashboard_state()
+    columns = st.columns(5)
+    columns[0].metric("Portfolio Value", _money(state["portfolio_value"]))
+    columns[1].metric("累積報酬", _pct(state["cumulative_return"]))
+    columns[2].metric("vs SPY", _pct(state["excess_vs_spy"], points=True))
+    columns[3].metric("vs QQQ", _pct(state["excess_vs_qqq"], points=True))
+    columns[4].metric("MDD", _pct(state["max_drawdown"]))
+
+    st.markdown("### V12 vs SPY vs QQQ")
+    curve = state["curve"]
+    if state["formal_forward_rows"] == 0 or curve.empty:
+        st.markdown('<div class="empty-state"><h3>尚未產生第一筆正式 Forward Signal</h3><p>Dashboard 不會用歷史回測或示意數字假裝成 Forward 績效。</p></div>', unsafe_allow_html=True)
+    else:
+        figure = go.Figure()
+        for name in ("V12", "SPY", "QQQ"):
+            frame = curve[curve["series"].eq(name)].copy()
+            if frame.empty:
+                continue
+            figure.add_trace(go.Scatter(
+                x=pd.to_datetime(frame["date"]), y=frame["value"], name=name, mode="lines+markers",
+                line={"color": COLORS[name], "width": 3 if name == "V12" else 2},
+                hovertemplate=f"<b>{name}</b><br>%{{x|%Y-%m-%d}}<br>$%{{y:,.2f}}<extra></extra>",
+            ))
+        figure.update_layout(
+            height=430, margin={"l": 8, "r": 8, "t": 12, "b": 8},
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(12,18,30,.68)",
+            font={"color": "#dfe7f2"}, hovermode="x unified",
+            xaxis={"gridcolor": "#202b3d"}, yaxis={"tickprefix": "$", "tickformat": ",.0f", "gridcolor": "#202b3d"},
+            legend={"orientation": "h", "y": 1.08},
         )
-        scenario_fields = {
-            "中性": ("base_low", "base_high"),
-            "樂觀": ("bull_low", "bull_high"),
-            "悲觀": ("bear_low", "bear_high"),
-        }
-        selected_scenario = scenario or "中性"
-        low_key, high_key = scenario_fields[selected_scenario]
-        st.metric(
-            f"{selected_scenario}情境可能區間",
-            format_price_range(structured.get(low_key), structured.get(high_key)),
-        )
+        st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
+
+    left, right = st.columns([1.35, 1])
+    with left:
+        st.markdown("### 目前持股與現金")
+        if state["holdings"]:
+            holdings = pd.DataFrame(state["holdings"]).rename(columns={"ticker": "股票", "shares": "股數", "average_cost": "平均成本", "target_weight": "目標權重"})
+            holdings["目標權重"] = holdings["目標權重"].map(lambda value: "—" if pd.isna(value) else f"{value:.1%}")
+            st.dataframe(holdings, width="stretch", hide_index=True)
+            st.metric("現金", _money(state["cash"]))
+        else:
+            st.info("目前沒有正式 Forward 持股。")
+    with right:
+        st.markdown("### 最新 V12 Signal")
+        if state["latest_signal"] is None:
+            st.info("尚未產生正式訊號。")
+        else:
+            st.metric("Signal Date", state["signal_date"] or "—")
+            st.write(f"**SPY Regime：** {state['market_regime'] or '—'}")
+            st.write(f"**V7：** {', '.join(state['v7_selected']) or '—'}")
+            st.write(f"**V8：** {', '.join(state['v8_selected']) or '—'}")
+            if state["target_weights"]:
+                st.write("**V12 權重：** " + " · ".join(f"{ticker} {weight:.0%}" for ticker, weight in state["target_weights"].items()))
+        st.markdown("### T+1 執行狀態")
+        st.metric("狀態", state["execution_status"])
+        if state["execution_date"]:
+            st.caption(f"預定執行日：{state['execution_date']}")
+
+    if state["events"]:
+        with st.expander("查看不可回寫的事件紀錄"):
+            rows = pd.DataFrame([{key: row.get(key) for key in ("sequence", "created_at", "portfolio_id", "event_type", "ticker", "action", "data_asof")} for row in reversed(state["events"][-100:])])
+            st.dataframe(rows, width="stretch", hide_index=True)
+    st.markdown('<div class="read-only">Read-only UI：此頁不會建立、更新或刪除 Signal、Order、Fill、Position 或 Ledger event。</div>', unsafe_allow_html=True)
+
+
+def render_market() -> None:
+    _header("Market Intelligence", "市場情報", "價格、財報、重大新聞與公司公告集中在同一頁；不恢復冗長情境報告。")
+    search, action = st.columns([5, 1])
+    with search:
+        symbol = st.text_input("股票代號", value=st.session_state.get("market_symbol", ""), placeholder="例如 AAPL、NVDA", label_visibility="collapsed").strip().upper()
+    with action:
+        clicked = st.button("搜尋", type="primary", width="stretch")
+    if clicked:
+        st.session_state["market_symbol"] = symbol
+    symbol = st.session_state.get("market_symbol", "")
+    if not symbol:
+        st.info("輸入股票代號並按「搜尋」開始查看；進入此頁不會自動呼叫外部資料或 AI API。")
+        return
+
+    with st.spinner(f"載入 {symbol} 市場資料…"):
+        payload = _market_payload(symbol)
+    prices = payload["prices"]
+    if prices.empty:
+        st.error("無法取得價格資料。請檢查股票代號或稍後再試。")
+        return
+    overview = payload["overview"] or {}
+    current = float(prices["close"].iloc[-1])
+    previous = float(prices["close"].iloc[-2]) if len(prices) > 1 else current
+    daily_change = current / previous - 1 if previous else 0.0
+    company = overview.get("公司名稱") or symbol
+    st.markdown(f"### {html.escape(symbol)} · {html.escape(str(company))}")
+    price_col, meta_col = st.columns([1, 2])
+    price_col.metric("最新收盤", _money(current), f"{daily_change:+.2%}")
+    meta_col.caption(f"資料來源：{payload['source']} · 截至 {prices['date'].iloc[-1]} · 非即時報價")
+
+    figure = go.Figure(go.Scatter(
+        x=pd.to_datetime(prices["date"]), y=prices["close"], mode="lines",
+        line={"color": COLORS["V12"], "width": 2.5}, fill="tozeroy", fillcolor="rgba(57,229,165,.06)",
+        hovertemplate="%{x|%Y-%m-%d}<br>$%{y:,.2f}<extra></extra>",
+    ))
+    figure.update_layout(
+        height=330, margin={"l": 8, "r": 8, "t": 8, "b": 8}, paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(12,18,30,.68)", font={"color": "#dfe7f2"},
+        xaxis={"gridcolor": "#202b3d"}, yaxis={"tickprefix": "$", "gridcolor": "#202b3d"},
+    )
+    st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
+
+    st.markdown("### 財報與基本面")
+    metrics = st.columns(5)
+    metrics[0].metric("市值", _number(overview.get("市值"), currency=True))
+    metrics[1].metric("本益比", _number(overview.get("本益比")))
+    metrics[2].metric("EPS", _number(overview.get("每股盈餘"), currency=True))
+    metrics[3].metric("毛利率", "—" if overview.get("毛利率") is None else f"{overview['毛利率']:.2f}%")
+    try:
+        operating_margin = float(overview["營業利益率"])
+    except (KeyError, TypeError, ValueError):
+        operating_margin = None
+    metrics[4].metric("營業利益率", _pct(operating_margin))
+    if payload["earnings"]:
+        with st.expander("近期 / 預定財報日期", expanded=True):
+            st.dataframe(pd.DataFrame(payload["earnings"]).rename(columns={"date": "日期", "estimate": "EPS 預估", "reported": "EPS 實際", "surprise": "驚喜幅度"}), width="stretch", hide_index=True)
+    elif not has_alpha_vantage_key():
+        st.caption("尚未設定 Alpha Vantage；部分基本面與財報欄位可能無法顯示。")
+
+    news_col, filing_col = st.columns(2)
+    with news_col:
+        st.markdown("### 重大新聞")
+        if payload["news"]:
+            for item in payload["news"][:5]:
+                title = html.escape(str(item.get("title") or "Untitled"))
+                url = html.escape(str(item.get("url") or ""), quote=True)
+                link = f'<a href="{url}" target="_blank">{title}</a>' if url else title
+                meta = " · ".join(filter(None, [str(item.get("source") or ""), str(item.get("time_published") or "")]))
+                st.markdown(f'<div class="event-card">{link}<div class="event-meta">{html.escape(meta)}</div></div>', unsafe_allow_html=True)
+        else:
+            st.info("目前沒有可用新聞；設定 ALPHAVANTAGE_API_KEY 後可補充新聞資料。")
+    with filing_col:
+        st.markdown("### SEC / 公司公告")
+        if payload["filings"]:
+            for item in payload["filings"][:5]:
+                title = f"{item['type']} · {item['title']}"
+                url = html.escape(item.get("url", ""), quote=True)
+                link = f'<a href="{url}" target="_blank">{html.escape(title)}</a>' if url else html.escape(title)
+                st.markdown(f'<div class="event-card">{link}<div class="event-meta">{html.escape(item["date"])}</div></div>', unsafe_allow_html=True)
+        else:
+            st.info("Yahoo Finance 目前沒有回傳可用的 SEC / 公司公告。")
+
+    st.markdown("### AI 重點摘要")
+    st.caption("AI 僅整理已顯示的價格、基本面與新聞；不產生目標價或買賣指令。")
+    summary_key = f"compact_summary_{symbol}"
+    if summary_key in st.session_state:
+        st.markdown(st.session_state[summary_key])
+    if st.button("產生 3–5 點摘要", key=f"summary_button_{symbol}"):
+        if not has_anthropic_key():
+            st.warning("尚未設定 ANTHROPIC_API_KEY，無法產生 AI 摘要。")
+        else:
+            try:
+                with st.spinner("整理重點…"):
+                    summary = generate_compact_summary(symbol, prices, payload["news"], overview)
+                st.session_state[summary_key] = summary
+                st.rerun()
+            except Exception as exc:
+                st.error(f"AI 摘要暫時無法使用：{exc}")
+
+
+def render_strategy_health() -> None:
+    _header("Strategy Health", "策略狀況", "固定規則監控策略與系統；只有資料或執行異常能阻止交易。")
+    _paper_banner()
+    state = _dashboard_state()
+    _status_badge(state["health_status"], state["health_label"])
+    if state["trading_blocked"]:
+        st.error("交易已被系統層阻止：" + (state["integrity_error"] or state["execution_status"]))
+    elif state["warnings"]:
+        for warning in state["warnings"]:
+            st.warning(warning)
+    else:
+        st.success("資料完整、執行狀態正常；Frozen V12 規則保持不變。")
+
+    first = st.columns(5)
+    first[0].metric("V12 狀態", "FROZEN")
+    first[1].metric("SPY Regime", state["market_regime"] or "—")
+    agreement = "—" if state["agreement_count"] is None else f"{state['agreement_count']} 檔重疊"
+    first[2].metric("V7 / V8 agreement", agreement)
+    first[3].metric("Drawdown", _pct(state["max_drawdown"]))
+    first[4].metric("資料截至", state["last_data_asof"] or "—")
+
+    second = st.columns(4)
+    second[0].metric("12M Rolling Sharpe", "—" if state["rolling_sharpe"] is None else f"{state['rolling_sharpe']:.2f}")
+    second[1].metric("Forward vs Backtest", "—" if state["sharpe_deviation"] is None else f"{state['sharpe_deviation']:+.2f} Sharpe")
+    second[2].metric("T+1", _pct(state["t1_return"]))
+    second[3].metric("T+2 / 差異", "—" if state["t2_return"] is None else f"{_pct(state['t2_return'])} / {_pct(state['t1_t2_spread'], points=True)}")
+
+    st.markdown("### 固定狀態規則")
+    operational, statistical = st.columns(2)
+    with operational:
         with st.container(border=True):
-            st.markdown(extract_scenario_report(report, selected_scenario))
+            st.markdown("#### 🔴 系統異常 · 可阻止交易")
+            st.write("- Ledger hash / schema / JSON 驗證失敗")
+            st.write("- 訊號已存在但缺少訂單或 T+1 已逾期")
+            st.write("- 資料不完整、時間錯誤或會計無法對帳")
+    with statistical:
+        with st.container(border=True):
+            st.markdown("#### 🟡 績效觀察 · 不修改策略")
+            st.write("- 少於 13 個月正式 snapshot：樣本不足")
+            st.write("- Rolling Sharpe < 0：進入觀察")
+            st.write("- Forward drawdown ≤ −20%：啟動研究檢查")
+    st.info("短期績效不好只能警告。Dashboard 不會調整 lookback、權重、股票池、執行日或任何 Frozen V12 規則。")
+    st.markdown('<div class="read-only">資料流：Frozen V12 → Forward Engine → SQLite / Evidence → Read-only UI → Streamlit。</div>', unsafe_allow_html=True)
 
-        with st.expander("完整 AI 分析"):
-            st.markdown(str(report).replace("\\n", "\n"))
 
-        with st.expander(f"近期新聞（{min(len(news), 5)}）"):
-            for item in news[:5]:
-                st.markdown(f"**{item['title']}**")
-                st.caption(f"{item['time_published']} · {item['source']} · {item['overall_sentiment_label']}")
+def main() -> None:
+    _inject_style()
+    with st.sidebar:
+        st.markdown("## ◈ V12")
+        st.caption("Forward Research System")
+        st.divider()
+        st.caption("Frozen strategy · Read-only dashboard")
+    navigation = st.navigation([
+        st.Page(render_overview, title="總覽 / 模擬交易", icon="📊", default=True),
+        st.Page(render_market, title="市場情報", icon="📰"),
+        st.Page(render_strategy_health, title="策略狀況", icon="🛡️"),
+    ])
+    navigation.run()
+    st.markdown('<div class="footer-note">僅供教育與研究使用。Paper trading 不代表真實成交；歷史績效不代表未來表現。</div>', unsafe_allow_html=True)
 
-    elif selected_page == "策略回測":
-        st.info("完整回測只會在開啟此頁時執行；首次載入固定股票池可能需要一些時間，之後會使用快取。")
-        stock_df = get_long_history_stock_data(symbol, period="5y")
-        spy_df = get_long_history_stock_data("SPY", period="5y")
-        if stock_df.empty or spy_df.empty or len(stock_df) < 201:
-            st.warning("策略研究至少需要 201 個共同交易日。")
-        else:
-            prepared = {
-                "Pullback Mean Reversion": mean_reversion_signals(stock_df, max_holding_days=10),
-                "Short-Term Momentum": momentum_relative_strength_signals(stock_df, spy_df, max_holding_days=20),
-            }
-            single_results = [run_backtest(frame, symbol, name, CONFIG) for name, frame in prepared.items()]
-            latest_momentum = prepared["Short-Term Momentum"].iloc[-1]
-            favorable = bool(latest_momentum["benchmark_close"] > latest_momentum["spy_ma200"])
 
-            universe_prices = {ticker: get_long_history_stock_data(ticker, period="5y") for ticker in LARGE_CAP_UNIVERSE}
-            universe_ready = all(not frame.empty for frame in universe_prices.values())
-            cross_result = cross_sectional_momentum_backtest(universe_prices, spy_df, CONFIG) if universe_ready else None
-            ranking = latest_cross_sectional_ranking(universe_prices, spy_df) if universe_ready else pd.DataFrame()
-            buy_hold_result = run_buy_and_hold(stock_df, symbol, CONFIG)
-            spy_result = run_buy_and_hold(spy_df, "SPY", CONFIG)
-            spy_result["strategy"] = "SPY"
-
-            st.subheader("今日策略看法")
-            st.success("市場環境：🟢 有利" if favorable else "市場環境：🔴 不利")
-            signal_rows = [current_signal(name, prepared[name], result) for name, result in zip(prepared, single_results)]
-            if not ranking.empty:
-                selected_row = ranking[ranking["symbol"] == symbol]
-                if not selected_row.empty:
-                    rank = int(selected_row.iloc[0]["rank"])
-                    selected = bool(selected_row.iloc[0]["selected"])
-                    signal_rows.append({
-                        "strategy": "Cross-Sectional Momentum",
-                        "signal": "BUY" if selected else "WAIT",
-                        "reason": f"20D return ranked #{rank} of {len(ranking)}",
-                        "rank": rank,
-                    })
-            signal_labels = {"BUY": "🟢 BUY", "HOLD": "🟢 HOLD", "EXIT": "🔴 EXIT", "SELL": "🔴 EXIT", "WAIT": "⚪ WAIT"}
-            st.dataframe(pd.DataFrame([{
-                "策略": row["strategy"], "訊號": signal_labels.get(row["signal"], row["signal"]), "原因": row["reason"]
-            } for row in signal_rows]), width="stretch", hide_index=True)
-
-            actionable = [row for row in signal_rows if row["signal"] in {"BUY", "HOLD", "SELL", "EXIT"}]
-            if actionable:
-                summary = "；".join(
-                    f"{row['strategy']}：{signal_labels.get(row['signal'], row['signal'])}"
-                    for row in actionable
-                )
-                st.info(f"簡單結論：{summary}。訊號以今日收盤資料判斷；新交易最快於下一個交易日開盤執行。")
-            else:
-                st.info("簡單結論：目前三個策略都沒有新的進場條件，先等待。訊號以今日收盤資料判斷。")
-
-            pull_row = prepared["Pullback Mean Reversion"].iloc[-1]
-            for row in signal_rows:
-                if row["strategy"] == "Pullback Mean Reversion":
-                    row["indicators"] = {"close": float(pull_row["close"]), "ma20": float(pull_row["ma20"]), "ma200": float(pull_row["ma200"]), "rsi14": float(pull_row["rsi14"])}
-                elif row["strategy"] == "Short-Term Momentum":
-                    row["indicators"] = {"close": float(latest_momentum["close"]), "ma200": float(latest_momentum["ma200"]), "stock_return_20d": float(latest_momentum["return_20d"]), "spy_return_20d": float(latest_momentum["benchmark_return_20d"])}
-            if saved_path:
-                saved_record = enrich_prediction(saved_path, strategy_signals=signal_rows, market_regime="Favorable" if favorable else "Unfavorable")
-                validations = fixed_horizon_validation(saved_record, stock_df, spy_df)
-                if validations:
-                    enrich_prediction(saved_path, strategy_validation=validations)
-
-            strategy_results = single_results + ([cross_result] if cross_result else [])
-            all_results = strategy_results + [buy_hold_result, spy_result]
-            st.subheader("一萬元歷史成長比較")
-            st.caption("假設測試開始時，每個策略、股票持有與 SPY 都各投入 10,000 美元。")
-            equity = equity_comparison(all_results)
-            equity["date"] = pd.to_datetime(equity["date"])
-            figure = go.Figure()
-            for name in equity.columns.drop("date"):
-                figure.add_trace(go.Scatter(x=equity["date"], y=equity[name], name=name, mode="lines", hovertemplate=f"<b>{name}</b><br>%{{x|%Y-%m-%d}}<br>$%{{y:,.0f}}<extra></extra>"))
-            figure.update_layout(height=520, margin={"l": 15, "r": 15, "t": 20, "b": 10}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(13,18,27,.72)", font={"color": "#dce3ed"}, hovermode="x unified", dragmode="zoom", yaxis={"title": "Portfolio Value ($)", "tickprefix": "$", "tickformat": ",.0f"}, xaxis={"rangeslider": {"visible": True, "thickness": .09}})
-            st.plotly_chart(figure, width="stretch", config={"scrollZoom": True, "displaylogo": False})
-
-            spy_total = spy_result["total_return_pct"]
-            rows = []
-            for result in all_results:
-                if result["strategy"] == "Cross-Sectional Momentum":
-                    metrics = calculate_equity_metrics(result)
-                    row = {"Strategy": result["strategy"], "Total Return %": metrics["Total Return %"], "CAGR %": metrics["CAGR %"], "Sharpe": metrics["Sharpe"], "Sortino": metrics["Sortino"], "Max Drawdown %": metrics["Max Drawdown %"], "Win Rate %": None, "Profit Factor": None, "Trades": metrics["Transactions"], "Exposure %": metrics["Exposure %"]}
-                else:
-                    row = calculate_metrics(result)
-                row["Alpha vs SPY"] = row["Total Return %"] - spy_total
-                rows.append(row)
-            comparison = pd.DataFrame(rows)
-            st.subheader("策略績效比較")
-            st.dataframe(comparison[["Strategy", "Total Return %", "CAGR %", "Sharpe", "Sortino", "Max Drawdown %", "Win Rate %", "Profit Factor", "Trades", "Exposure %", "Alpha vs SPY"]].round(2), width="stretch", hide_index=True)
-
-            candidates = comparison[comparison["Strategy"].isin([r["strategy"] for r in strategy_results])]
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("最高報酬", candidates.loc[candidates["Total Return %"].idxmax(), "Strategy"])
-            c2.metric("風險調整後最佳", candidates.loc[candidates["Sharpe"].idxmax(), "Strategy"])
-            c3.metric("歷史跌幅最低", candidates.loc[candidates["Max Drawdown %"].idxmax(), "Strategy"])
-            c4.metric("市場環境", "有利" if favorable else "不利")
-
-            st.subheader("時間順序驗證")
-            st.caption("固定規則未做參數最佳化；前 70% 是研究期間，後 30% 是未參與規則設計的驗證期間。判斷穩定性時優先看後 30%。")
-            split_rows = []
-            for result in strategy_results:
-                split = chronological_split_metrics(result)
-                for period, values in split.items():
-                    split_rows.append({"Strategy": result["strategy"], "Period": period, **values})
-            st.dataframe(pd.DataFrame(split_rows).round(2), width="stretch", hide_index=True)
-
-            with st.expander("Secondary Price Chart — signals and filters"):
-                selected = st.selectbox("Strategy", list(prepared))
-                frame = prepared[selected]
-                result = single_results[list(prepared).index(selected)]
-                price_fig = go.Figure()
-                price_fig.add_trace(go.Scatter(x=frame["date"], y=frame["close"], name="Price"))
-                price_fig.add_trace(go.Scatter(x=frame["date"], y=frame["ma200"], name="MA200", line={"dash": "dot"}))
-                if selected == "Pullback Mean Reversion":
-                    price_fig.add_trace(go.Scatter(x=frame["date"], y=frame["ma20"], name="MA20"))
-                for action, color, marker in [("buy", "#64e89b", "triangle-up"), ("sell", "#ff646b", "triangle-down")]:
-                    trades = [trade for trade in result["trades"] if trade["action"] == action]
-                    price_fig.add_trace(go.Scatter(x=[trade["execution_date"] for trade in trades], y=[trade["execution_price"] for trade in trades], mode="markers", name=action.upper(), marker={"color": color, "symbol": marker, "size": 10}))
-                price_fig.update_layout(height=420, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(13,18,27,.72)", font={"color": "#dce3ed"}, xaxis={"rangeslider": {"visible": True}})
-                st.plotly_chart(price_fig, width="stretch", config={"scrollZoom": True, "displaylogo": False})
-                if selected == "Pullback Mean Reversion":
-                    st.line_chart(frame.set_index("date")[["rsi14"]], height=180)
-                st.info("Green markers are next-open entries; red markers are next-open exits. MA200 is only a long-term trend filter, not the main short-term exit rule.")
-
-            st.warning("Fixed current large-cap universe for research purposes. The historical result contains survivorship bias and does not use point-in-time S&P membership.")
-
-    elif selected_page == "公司資料":
-        st.subheader("公司基本面")
-        fundamentals = overview or {}
-        f1, f2, f3, f4 = st.columns(4)
-        f1.metric("市值", fundamentals.get("市值", "—"))
-        f2.metric("本益比", fundamentals.get("本益比", "—"))
-        f3.metric("每股盈餘", fundamentals.get("每股盈餘", "—"))
-        f4.metric("產業", fundamentals.get("產業別", "—"))
-        if fundamentals.get("公司簡介"):
-            st.write(fundamentals["公司簡介"])
-
-        with st.expander("查看原始股價資料"):
-            st.dataframe(short_df.sort_values("date", ascending=False), width="stretch", hide_index=True)
-
-        st.subheader("歷史預測")
-        current_predictions = list_predictions(symbol)
-        all_predictions = list_predictions()
-        current_scope_label = f"目前股票（{len(current_predictions)}）"
-        all_scope_label = f"全部股票（{len(all_predictions)}）"
-        history_scope = st.segmented_control(
-            "歷史範圍",
-            [current_scope_label, all_scope_label],
-            default=current_scope_label,
-            key=f"history_scope_{symbol}",
-        )
-        showing_all = history_scope == all_scope_label
-        predictions = all_predictions if showing_all else current_predictions
-        if showing_all:
-            ticker_count = len({record.get("ticker") for record in predictions})
-            st.caption(f"目前顯示全部 {len(predictions)} 筆紀錄，共 {ticker_count} 支股票。")
-        else:
-            st.caption(f"目前只顯示 {symbol} 的 {len(predictions)} 筆紀錄。")
-        scorecard_records = [record for record in predictions if record.get("strategy_validation")]
-        if scorecard_records:
-            st.markdown("#### 訊號後跑贏 SPY 統計")
-            st.caption("這裡衡量 BUY 訊號後股票是否跑贏 SPY，不等同依照完整進出規則計算的實際策略報酬。")
-            score_horizon = st.segmented_control("驗證期間", [5, 10, 20], default=20, format_func=lambda value: f"{value}D")
-            scorecard = strategy_scorecard(scorecard_records, score_horizon or 20)
-            if scorecard.empty:
-                st.info(f"目前尚無已成熟的 {score_horizon or 20} 個交易日驗證紀錄。")
-            else:
-                st.dataframe(scorecard.round(2), width="stretch", hide_index=True)
-        if predictions:
-            index = st.selectbox(
-                "選擇預測紀錄",
-                range(len(predictions)),
-                format_func=lambda i: f"{predictions[i]['ticker']} — {predictions[i]['timestamp']}",
-                key=f"prediction_record_{symbol}_{'all' if showing_all else 'current'}",
-            )
-            record = predictions[index]
-            st.caption(f"Market Regime at prediction: {record.get('market_regime', '舊紀錄未保存')}")
-            h1, h2, h3, h4 = st.columns(4)
-            h1.metric("預測時股價", f"${record.get('current_price_at_prediction', '—')}")
-            h2.metric("樂觀區間", format_price_range(record.get("bull_low"), record.get("bull_high")))
-            h3.metric("中性區間", format_price_range(record.get("base_low"), record.get("base_high")))
-            h4.metric("悲觀區間", format_price_range(record.get("bear_low"), record.get("bear_high")))
-            if record.get("outcome_checked"):
-                st.success(
-                    f"已驗證：實際報酬 {record.get('actual_return_pct', '—')}% · "
-                    f"落在 {str(record.get('which_scenario_occurred', '—')).upper()} 情境"
-                )
-            strategy_signals = record.get("strategy_signals", [])
-            if strategy_signals:
-                st.markdown("##### 當時策略訊號")
-                st.dataframe(
-                    pd.DataFrame([{k: v for k, v in item.items() if k != "indicators"} for item in strategy_signals]).rename(columns={"strategy": "策略", "signal": "訊號", "reason": "當時理由", "rank": "當時排名"}),
-                    width="stretch",
-                    hide_index=True,
-                )
-            validation = record.get("strategy_validation", {})
-            if validation:
-                available = sorted(validation, key=int)
-                chosen_horizon = st.segmented_control(
-                    "查看事後驗證",
-                    available,
-                    default=available[0],
-                    format_func=lambda value: f"{value}D",
-                )
-                outcome = validation[chosen_horizon or available[0]]
-                outcome_rows = []
-                for strategy_name, values in outcome.get("strategies", {}).items():
-                    outcome_rows.append({
-                        "策略": strategy_name,
-                        "當時訊號": values.get("signal"),
-                        "股票報酬 %": values["stock_return_pct"],
-                        "SPY 報酬 %": values["spy_return_pct"],
-                        "Alpha vs SPY %": values["alpha_vs_spy_pct"],
-                        "跑贏 SPY": "YES" if values["beat_spy"] else "NO",
-                    })
-                st.caption(f"{outcome['start_date']} → {outcome['end_date']} · 股票 {outcome['stock_return_pct']:+.2f}% · SPY {outcome['spy_return_pct']:+.2f}%")
-                st.dataframe(pd.DataFrame(outcome_rows), width="stretch", hide_index=True)
-            if not record.get("outcome_checked") and st.button("驗證目前股價"):
-                latest_raw = get_daily_stock_data(record["ticker"])
-                if "Time Series (Daily)" in latest_raw:
-                    latest_price = float(clean_stock_data(latest_raw)["close"].iloc[-1])
-                else:
-                    latest_df = get_long_history_stock_data(record["ticker"], period="1y")
-                    latest_price = float(latest_df["close"].iloc[-1]) if not latest_df.empty else None
-                if latest_price is not None:
-                    check_prediction_outcome(record, latest_price)
-                    st.success("預測結果已更新。")
-                    st.rerun()
-                else:
-                    st.error("目前無法取得最新股價，請稍後再試。")
-        else:
-            st.info("目前沒有歷史預測。")
-
-st.caption("僅供教育與研究使用，歷史績效不代表未來表現。")
+if __name__ == "__main__":
+    main()

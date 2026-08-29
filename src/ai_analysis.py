@@ -171,6 +171,37 @@ def generate_report(symbol, df, news_list=None, overview=None):
 
     return report_text
 
+
+def generate_compact_summary(symbol, df, news_list=None, overview=None):
+    """Generate a short evidence-based dashboard summary.
+
+    This is intentionally separate from the legacy Bull/Base/Bear report.  It
+    uses a small prompt and returns only three to five bullets without price
+    targets or trading instructions.
+    """
+    recent = df.tail(20)[[column for column in ("date", "close", "volume") if column in df.columns]]
+    prompt = f"""你是股票研究儀表板的摘要編輯。
+
+股票：{symbol}
+近期價格資料：
+{recent.to_string(index=False)}
+
+公司資料：
+{format_overview_for_prompt(overview or {})}
+
+近期新聞：
+{format_news_for_prompt(news_list or [], max_items=5)}
+
+請只輸出 3 到 5 個繁體中文條列重點，每點一到兩句。優先說明：
+1. 最近價格與波動；2. 最新財報或基本面；3. 真正重要的新聞或公告；4. 主要資料缺口或風險。
+不要提供 Bull/Base/Bear 情境、目標價、買賣建議或保證。沒有資料時必須明確寫「資料不足」，不可猜測。"""
+    message = _anthropic_client().messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=550,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return message.content[0].text.strip()
+
 import json
 
 
