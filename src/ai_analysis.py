@@ -4,9 +4,11 @@
 import re
 from anthropic import Anthropic
 from dotenv import load_dotenv
+import requests
 from src.config import get_secret
 
 load_dotenv()
+GEMINI_COMPACT_MODEL = "gemini-flash-lite-latest"
 
 
 class AIConfigurationError(RuntimeError):
@@ -17,11 +19,68 @@ def has_anthropic_key() -> bool:
     return bool(get_secret("ANTHROPIC_API_KEY"))
 
 
+def has_gemini_key() -> bool:
+    return bool(get_secret("GEMINI_API_KEY"))
+
+
+def has_compact_ai_key() -> bool:
+    """Return whether the dashboard summary has an available AI provider."""
+    return has_gemini_key() or has_anthropic_key()
+
+
+def compact_ai_provider() -> str | None:
+    """Return the provider used by compact summaries, in priority order."""
+    if has_gemini_key():
+        return "Gemini Flash-Lite"
+    if has_anthropic_key():
+        return "Anthropic Claude"
+    return None
+
+
 def _anthropic_client() -> Anthropic:
     api_key = get_secret("ANTHROPIC_API_KEY")
     if not api_key:
         raise AIConfigurationError("ANTHROPIC_API_KEY is not configured.")
     return Anthropic(api_key=api_key)
+
+
+def _gemini_generate(prompt: str, *, max_output_tokens: int = 550) -> str:
+    """Generate text with Gemini without adding another SDK dependency."""
+    api_key = get_secret("GEMINI_API_KEY")
+    if not api_key:
+        raise AIConfigurationError("GEMINI_API_KEY is not configured.")
+
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_COMPACT_MODEL}:generateContent"
+    )
+    try:
+        response = requests.post(
+            url,
+            headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+            json={
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "maxOutputTokens": max_output_tokens,
+                    "temperature": 0.2,
+                },
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
+        candidates = data.get("candidates") or []
+        parts = (candidates[0].get("content") or {}).get("parts") if candidates else []
+        text = "".join(str(part.get("text") or "") for part in (parts or [])).strip()
+        if not text:
+            raise AIConfigurationError("Gemini did not return summary text.")
+        return text
+    except requests.RequestException as exc:
+        status = getattr(exc.response, "status_code", None)
+        detail = f"HTTP {status}" if status else "network error"
+        raise AIConfigurationError(f"Gemini request failed ({detail}).") from exc
+    except (TypeError, ValueError) as exc:
+        raise AIConfigurationError("Gemini returned an invalid response.") from exc
 
 
 def format_news_for_prompt(news_list, max_items=15):
@@ -195,6 +254,9 @@ def generate_compact_summary(symbol, df, news_list=None, overview=None):
 請只輸出 3 到 5 個繁體中文條列重點，每點一到兩句。優先說明：
 1. 最近價格與波動；2. 最新財報或基本面；3. 真正重要的新聞或公告；4. 主要資料缺口或風險。
 不要提供 Bull/Base/Bear 情境、目標價、買賣建議或保證。沒有資料時必須明確寫「資料不足」，不可猜測。"""
+    if has_gemini_key():
+        return _gemini_generate(prompt, max_output_tokens=550)
+
     message = _anthropic_client().messages.create(
         model="claude-sonnet-4-5",
         max_tokens=550,

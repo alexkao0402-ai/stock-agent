@@ -166,14 +166,17 @@ real values to Git:
 
 ```toml
 ALPHAVANTAGE_API_KEY = "your_alpha_vantage_key"
+GEMINI_API_KEY = "your_gemini_key"
 ANTHROPIC_API_KEY = "your_anthropic_key"
 ```
 
 Both Streamlit `st.secrets` and local environment variables are supported.
 Without Alpha Vantage, the app falls back to yfinance prices and clearly marks
-news/fundamentals as unavailable. Without Anthropic, price and quantitative
-research still load while AI scenarios are disabled. `OPENAI_API_KEY` is not
-used by this application.
+news/fundamentals as unavailable. Compact dashboard summaries prefer Google's
+current Gemini Flash-Lite alias and fall back to Anthropic only when
+`GEMINI_API_KEY` is absent.
+Without either AI key, price and quantitative research still load while the AI
+summary is disabled. `OPENAI_API_KEY` is not used by this application.
 
 The local `cache/`, `predictions/`, and `signal_snapshots/` directories are
 ephemeral on Community Cloud. Use an external database before relying on

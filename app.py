@@ -10,7 +10,11 @@ import plotly.graph_objects as go
 import streamlit as st
 import yfinance as yf
 
-from src.ai_analysis import generate_compact_summary, has_anthropic_key
+from src.ai_analysis import (
+    compact_ai_provider,
+    generate_compact_summary,
+    has_compact_ai_key,
+)
 from src.config import get_secret
 from src.dashboard_cloud_snapshot import (
     DashboardSnapshotError,
@@ -390,12 +394,15 @@ def render_market() -> None:
 
     st.markdown("### AI 重點摘要")
     st.caption("AI 僅整理已顯示的價格、基本面與新聞；不產生目標價或買賣指令。")
+    provider = compact_ai_provider()
+    if provider:
+        st.caption(f"摘要服務：{provider}")
     summary_key = f"compact_summary_{symbol}"
     if summary_key in st.session_state:
         st.markdown(st.session_state[summary_key])
     if st.button("產生 3–5 點摘要", key=f"summary_button_{symbol}"):
-        if not has_anthropic_key():
-            st.warning("尚未設定 ANTHROPIC_API_KEY，無法產生 AI 摘要。")
+        if not has_compact_ai_key():
+            st.warning("尚未設定 GEMINI_API_KEY 或 ANTHROPIC_API_KEY，無法產生 AI 摘要。")
         else:
             try:
                 with st.spinner("整理重點…"):
