@@ -28,8 +28,12 @@ CRITICAL_FORWARD_FILES = [
     "src/paper_ledger.py",
     "src/forward_evidence.py",
     "src/forward_execution.py",
+    "src/forward_valuation.py",
+    "src/forward_state_cloud.py",
     "scripts/capture_v12_live_inputs.py",
     "scripts/process_v12_paper_open.py",
+    "scripts/run_v12_forward_automation.py",
+    "scripts/sync_v12_forward_state.py",
 ]
 
 
@@ -77,7 +81,7 @@ def main() -> int:
     try:
         root, created, summary = capture_v12_live_inputs(
             candidate_count=args.candidate_count,
-            sec_user_agent=os.getenv("SEC_USER_AGENT", DEFAULT_SEC_USER_AGENT),
+            sec_user_agent=os.getenv("SEC_USER_AGENT") or DEFAULT_SEC_USER_AGENT,
         )
         signal_path, signal_created, signal = write_immutable_v12_signal(root)
         git_commit, implementation_hashes = _git_evidence()

@@ -56,6 +56,10 @@ Realized P&L is net sale proceeds, after sell commission, minus the sold shares'
 - Signal and pending-order creation is one database transaction.
 - Fill events and the post-fill portfolio snapshot are one database transaction.
 - A crash inside either transaction rolls back the entire batch. A crash after commit can be retried without duplicate events.
+- Daily close valuation events are deterministic and append-only. They do not
+  create signals, orders or fills and do not change the Frozen V12 definition.
+- The cloud runner restores an HMAC-authenticated private state bundle and
+  rejects any ledger that is newer than or divergent from its verified chain.
 
 ## Health policy
 

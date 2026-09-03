@@ -112,7 +112,11 @@ def _initial_capital(events: list[dict[str, Any]], portfolio_id: str) -> float |
 
 
 def _snapshots(events: list[dict[str, Any]], portfolio_id: str) -> list[dict[str, Any]]:
-    return _portfolio_events(events, portfolio_id, "PORTFOLIO_SNAPSHOT")
+    return [
+        row for row in events
+        if row.get("portfolio_id") == portfolio_id
+        and row.get("event_type") in {"PORTFOLIO_SNAPSHOT", "VALUATION_SNAPSHOT"}
+    ]
 
 
 def _equity_value(row: dict[str, Any] | None) -> float | None:
@@ -145,13 +149,13 @@ def _max_drawdown(values: list[float]) -> float | None:
     return worst
 
 
-def _rolling_sharpe(values: list[float], periods: int = 12) -> float | None:
+def _rolling_sharpe(values: list[float], periods: int = 252) -> float | None:
     if len(values) < periods + 1:
         return None
     returns = pd.Series(values, dtype=float).pct_change().dropna().tail(periods)
     if len(returns) < periods or float(returns.std(ddof=1)) == 0.0:
         return None
-    return float(returns.mean() / returns.std(ddof=1) * math.sqrt(12))
+    return float(returns.mean() / returns.std(ddof=1) * math.sqrt(252))
 
 
 def _curve(events: list[dict[str, Any]]) -> pd.DataFrame:
@@ -164,7 +168,11 @@ def _curve(events: list[dict[str, Any]]) -> pd.DataFrame:
                 continue
             payload = event.get("payload") or {}
             rows.append({
-                "date": str(payload.get("execution_date") or event.get("data_asof", ""))[:10],
+                "date": str(
+                    payload.get("valuation_date")
+                    or payload.get("execution_date")
+                    or event.get("data_asof", "")
+                )[:10],
                 "series": label,
                 "value": value,
             })
@@ -223,6 +231,7 @@ def build_dashboard_snapshot(
     signal = _latest_signal(events)
     execution_status, overdue, execution_date = _execution_status(events, signal, current_day)
     v12_snapshots = _snapshots(events, "V12_T1")
+    formal_v12_snapshots = _portfolio_events(events, "V12_T1", "PORTFOLIO_SNAPSHOT")
     v12_values = [value for row in v12_snapshots if (value := _equity_value(row)) is not None]
     latest_snapshot = v12_snapshots[-1] if v12_snapshots else None
     portfolio_value = _equity_value(latest_snapshot)
@@ -280,7 +289,7 @@ def build_dashboard_snapshot(
     return {
         "frozen_version": FROZEN_VERSION,
         "events": events,
-        "formal_forward_rows": len(v12_snapshots),
+        "formal_forward_rows": len(formal_v12_snapshots),
         "curve": _curve(events),
         "portfolio_value": portfolio_value,
         "cumulative_return": v12_return,

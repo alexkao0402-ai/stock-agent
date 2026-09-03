@@ -132,6 +132,13 @@ python -m scripts.process_v12_paper_open --execution-date YYYY-MM-DD
 See `docs/V12_FORWARD_OPERATING_CONTRACT.md` for accounting, calendar,
 corporate-action and retry definitions.
 
+The supervised first T+1/T+2 lifecycle is complete. The fail-closed workflow in
+`.github/workflows/v12-forward-paper.yml` can restore the private durable state,
+run month-end capture, process due T+1/T+2 accounts, append daily close
+valuations, verify the ledger and publish the signed Dashboard. Activation and
+the one-time state bootstrap are documented in
+`docs/V12_CLOUD_DASHBOARD_SYNC.md`. Frozen V12 is unchanged.
+
 The future paper-trading architecture and gated IBKR Paper phases are documented
 in `docs/V12_ROADMAP.md`. IBKR is not active, and the roadmap does not authorize
 live trading or change the first legal Frozen V12 forward signal.

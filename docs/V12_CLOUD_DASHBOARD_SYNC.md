@@ -3,8 +3,10 @@
 ## Purpose
 
 Streamlit Cloud is a read-only monitoring surface.  The append-only SQLite
-ledger remains in a trusted persistent execution environment and is never
-uploaded to Streamlit Cloud as the trading source of truth.
+ledger remains the source of truth and is never uploaded to Streamlit Cloud.
+For the ephemeral GitHub runner, an authenticated copy of the complete ignored
+Forward state is stored in private Supabase Storage and restored before every
+run. Streamlit does not load or write that private state object.
 
 ## Data flow
 
@@ -22,6 +24,18 @@ Private Supabase Storage object
 Streamlit Cloud (read-only)
 ```
 
+The trusted runner has a separate durable-state path:
+
+```text
+Private signed Forward-state bundle in Supabase
+        ↓ restore + verify before any work
+GitHub Actions runner / append-only SQLite ledger
+        ↓ capture, execution, valuation
+Verify ledger + reject divergence
+        ↓ persist after every mutating phase
+Private signed Forward-state bundle in Supabase
+```
+
 The exported JSON contains only fields used by the Dashboard.  Raw event
 payloads, content hashes and the complete accounting ledger are excluded.
 
@@ -32,6 +46,12 @@ payloads, content hashes and the complete accounting ledger are excluded.
   schema or non-HTTPS remote URL fails closed.
 - A ledger integrity error prevents snapshot export.
 - Streamlit never writes a signal, order, fill, position or ledger event.
+- The durable-state bundle is HMAC authenticated, private, path-allowlisted and
+  contains only the ledger plus immutable Forward evidence directories.
+- A cloud ledger that is newer than or divergent from the runner ledger cannot
+  be overwritten.
+- GitHub Actions uses a single concurrency group so two scheduled runs cannot
+  operate simultaneously.
 - The signing secret must exist only in the trusted runner and Streamlit
   Secrets.  It must never be committed.
 
@@ -52,6 +72,7 @@ SUPABASE_URL = "https://your-project-ref.supabase.co"
 SUPABASE_SECRET_KEY = "your-server-side-secret-key"
 V12_DASHBOARD_SUPABASE_BUCKET = "v12-dashboard"
 V12_DASHBOARD_SUPABASE_OBJECT = "v12_dashboard.json"
+V12_FORWARD_STATE_SUPABASE_OBJECT = "forward_state/v12_forward_state.json"
 V12_DASHBOARD_SYNC_SECRET = "same-long-random-secret-as-the-runner"
 ```
 
@@ -66,10 +87,41 @@ file.  Streamlit performs authenticated reads only; it never uploads or changes
 the object.  `SUPABASE_SERVICE_ROLE_KEY` is accepted as a legacy fallback, but
 `SUPABASE_SECRET_KEY` is the preferred configuration name.
 
+## Durable-state bootstrap
+
+After the automation code is committed, bootstrap the existing verified local
+ledger exactly once:
+
+```bash
+python scripts/sync_v12_forward_state.py upload --bootstrap
+```
+
+Future runs restore the object first and refuse to create a new blank ledger.
+The object may also be restored manually with:
+
+```bash
+python scripts/sync_v12_forward_state.py download
+```
+
 ## Automation boundary
 
 The first legal Forward lifecycle remains manual and supervised.  Only after
 Signal → Order → Fill → Position → Portfolio reconciliation passes may a
 scheduler run capture, execution, snapshot export and upload automatically.
 Operational failure must notify and stop; it must never retry an unknown order
-by guessing.  IBKR Paper is a later phase and IBKR Live remains prohibited.
+by guessing. The scheduler runs at 23:30 UTC on weekdays, safely after the
+regular NYSE close in both EST and EDT. It performs:
+
+1. authenticated Forward-state restore;
+2. month-end capture only on the final NYSE session;
+3. any due T+1/T+2 executions;
+4. daily close valuations of V12, SPY and QQQ paper portfolios;
+5. ledger verification and durable-state persistence;
+6. signed read-only Dashboard publication.
+
+Corporate actions still fail closed for explicit review. IBKR Paper is a later
+phase and IBKR Live remains prohibited.
+
+GitHub runs scheduled workflows only from the repository's default branch.
+Without merging `main`, the production dashboard branch containing this
+workflow must be set as the default branch before the schedule becomes active.
