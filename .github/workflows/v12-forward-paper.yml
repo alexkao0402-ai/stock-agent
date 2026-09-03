@@ -37,4 +37,4 @@ jobs:
       - name: Run unit tests before touching Forward state
         run: python -m unittest discover -s tests -v
       - name: Restore, process, verify, persist, and publish
-        run: python scripts/run_v12_forward_automation.py
+        run: python -m scripts.run_v12_forward_automation
