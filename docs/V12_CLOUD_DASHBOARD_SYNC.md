@@ -105,10 +105,10 @@ python scripts/sync_v12_forward_state.py download
 
 ## Automation boundary
 
-The first legal Forward lifecycle remains manual and supervised.  Only after
-Signal → Order → Fill → Position → Portfolio reconciliation passes may a
-scheduler run capture, execution, snapshot export and upload automatically.
-Operational failure must notify and stop; it must never retry an unknown order
+The first legal Signal → Order → Fill → Position → Portfolio lifecycle passed
+under supervision. The scheduler is active and its first unattended post-close
+valuation loop completed successfully for the 2026-09-03 US session. An
+operational failure must notify and stop; it must never retry an unknown order
 by guessing. The scheduler runs at 23:30 UTC on weekdays, safely after the
 regular NYSE close in both EST and EDT. It performs:
 
@@ -124,4 +124,4 @@ phase and IBKR Live remains prohibited.
 
 GitHub runs scheduled workflows only from the repository's default branch.
 Without merging `main`, the production dashboard branch containing this
-workflow must be set as the default branch before the schedule becomes active.
+workflow is the default branch: `refactor/large-cap-strategies`.

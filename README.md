@@ -1,8 +1,49 @@
-# Large-Cap Short-Term Swing Strategy Research System
+# V12 Forward Paper Trading Research System
 
-A research application for testing **3–20 trading-day swing hypotheses** on large-cap US equities. It is not a day-trading, crypto, penny-stock, long-term recommendation, brokerage, or live-execution system.
+A research and monitoring application for the frozen V12 large-cap
+cross-sectional momentum strategy. It is not a brokerage or live-execution
+system. The older 3–20 trading-day experiments remain a historical research
+foundation, not the source of official Forward results.
 
-## Research flow
+## Current demo status
+
+As of 2026-09-04, the first legal Forward lifecycle is complete:
+
+- immutable 2026-08-31 point-in-time signal;
+- T+1 execution on 2026-09-01 and isolated T+2 challenger execution on
+  2026-09-02;
+- separate V12, SPY and QQQ paper accounts;
+- first unattended GitHub Actions close loop for the 2026-09-03 session;
+- authenticated durable state with 44 append-only ledger events;
+- signed, read-only Streamlit Dashboard publication.
+
+This is **V12 Demo v1.0 READY for internal paper-trading demonstration**. It is
+not evidence of strategy profitability, broker execution or live-trading
+readiness. Forward statistical metrics remain sample-limited.
+
+## Production architecture
+
+```text
+Frozen V12
+    ↓
+Point-in-Time Signal + Immutable Evidence
+    ↓
+Internal T+1 / T+2 Paper Execution
+    ↓
+Append-Only SQLite Ledger + Accounting Reconciliation
+    ↓
+Authenticated Private Supabase State
+    ↓
+Signed Display Projection
+    ↓
+Read-Only Streamlit Dashboard
+```
+
+GitHub Actions restores and verifies the private state before work, then runs
+month-end capture, due execution and daily close valuation. Streamlit can only
+read the signed display projection and cannot create or modify trading events.
+
+## Historical research flow
 
 ```text
 SPY Market Regime
@@ -175,6 +216,24 @@ real values to Git:
 ALPHAVANTAGE_API_KEY = "your_alpha_vantage_key"
 GEMINI_API_KEY = "your_gemini_key"
 ANTHROPIC_API_KEY = "your_anthropic_key"
+SUPABASE_URL = "https://your-project-ref.supabase.co"
+SUPABASE_SECRET_KEY = "your-server-side-secret-key"
+V12_DASHBOARD_SYNC_SECRET = "same-long-random-secret-as-the-runner"
+V12_DASHBOARD_SUPABASE_BUCKET = "v12-dashboard"
+V12_DASHBOARD_SUPABASE_OBJECT = "v12_dashboard.json"
+```
+
+The first three provider keys are optional Market Intelligence inputs. The
+three Supabase/sync values are required for the cloud Forward Dashboard. The
+bucket and object values are optional when the documented defaults are used.
+
+GitHub Actions requires these repository Secrets for the scheduled Forward
+cycle:
+
+```text
+SUPABASE_URL
+SUPABASE_SECRET_KEY
+V12_DASHBOARD_SYNC_SECRET
 ```
 
 Both Streamlit `st.secrets` and local environment variables are supported.

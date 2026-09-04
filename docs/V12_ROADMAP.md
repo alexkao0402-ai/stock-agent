@@ -1,11 +1,14 @@
 # Frozen V12 Forward Trading Roadmap
 
-Last updated: 2026-08-29
+Last updated: 2026-09-04
 Strategy: `V12-FROZEN-2026-08-28`
 
 ## Current decision
 
-- The first legal V12 forward signal and its Internal Simulator lifecycle remain the immediate priority.
+- The first legal V12 forward signal, T+1/T+2 Internal Simulator lifecycle and
+  first scheduled post-close valuation loop are complete.
+- The immediate priority is to accumulate an auditable Forward track record and
+  keep the automated daily close loop healthy without changing Frozen V12.
 - IBKR integration is a later phase. Nothing in this roadmap authorizes an IBKR connection or broker order today.
 - The Internal Forward Paper Trading engine remains the deterministic execution and audit baseline.
 - The only future broker scope approved by this roadmap is **IBKR PAPER**.
@@ -44,17 +47,28 @@ Frozen V12 must not know which broker is used. Streamlit is a monitoring surface
 
 | Phase | Scope | Status | Exit gate |
 | --- | --- | --- | --- |
-| 1 | V12 Final Paper Readiness | **READY WITH CONDITIONS** | Satisfy the gates in `V12_FINAL_PAPER_READINESS_REPORT.md`. |
-| 2 | First legal forward signal | **PENDING** | Create the first immutable, non-backfilled point-in-time signal only inside its legal post-close window. |
-| 3 | Internal T+1 forward execution | **PENDING** | Verify one complete Signal → Order → Fill → Position → Portfolio → P&L lifecycle, including ledger and accounting reconciliation. |
+| 1 | V12 Final Paper Readiness | **COMPLETE** | Readiness gates, parity, accounting, evidence, idempotency and failure recovery passed. |
+| 2 | First legal forward signal | **COMPLETE** | Immutable, non-backfilled 2026-08-31 signal and evidence package created in the legal window. |
+| 3 | Internal T+1 forward execution | **COMPLETE** | T+1 executed 2026-09-01, T+2 executed 2026-09-02, and the first scheduled 2026-09-03 close valuation reconciled. |
 | 4 | Broker abstraction layer | **NOT STARTED** | Strategy-independent interface and Internal Simulator adapter pass unit tests. Start only after Phase 3 passes. |
 | 5 | Mock broker tests | **NOT STARTED** | All lifecycle, failure, idempotency and reconciliation tests pass without an IBKR connection. |
 | 6 | IBKR Paper integration | **NOT STARTED** | Paper-only account guard, order lifecycle and recovery are verified. No live capability. |
 | 7 | Internal vs IBKR reconciliation | **NOT STARTED** | Expected and broker execution differences are recorded without mutating either source of truth. |
-| 8 | Streamlit monitoring dashboard | **NOT STARTED** | Read-only presentation of ledger, portfolio and reconciliation state; no trading state stored in Streamlit. |
-| 9 | Forward track record | **NOT STARTED** | Accumulate auditable V12 forward observations before any later capital decision. |
+| 8 | Streamlit monitoring dashboard | **COMPLETE (internal simulator v1)** | Signed, read-only cloud presentation is live; future IBKR reconciliation views remain gated behind Phases 4–7. |
+| 9 | Forward track record | **IN PROGRESS** | Daily signed observations are accumulating; sample size is not yet sufficient for statistical conclusions. |
 
 Small-capital live validation is outside the approved roadmap. It may only be evaluated in a separate future phase after an explicit user decision.
+
+## Verified production evidence
+
+- Official signal date: `2026-08-31`.
+- Official T+1 execution date: `2026-09-01`.
+- Isolated T+2 challenger execution date: `2026-09-02`.
+- First unattended scheduled close loop: GitHub Actions `schedule` run on
+  `2026-09-03` after the US close.
+- The scheduled loop restored private state, appended six valuation snapshots,
+  verified the ledger, persisted 44 events and published a signed Dashboard.
+- Frozen V12 remained unchanged throughout the lifecycle.
 
 ## Phase 4 — broker abstraction TODO
 
@@ -190,15 +204,17 @@ A mismatch must not be hidden by changing the Internal Simulator ledger.
 - If both are ever connected to IBKR Paper, they require separate portfolio/accounting identities.
 - If one IBKR Paper account cannot isolate them cleanly, only T+1 may use IBKR Paper; T+2 stays in the Internal Simulator.
 
-## Future Streamlit monitoring scope
+## Streamlit monitoring scope
 
-The future page may display:
+The internal-simulator v1 page displays:
 
 - portfolio value, cash, positions, daily and cumulative P&L, and maximum drawdown;
 - SPY and QQQ benchmarks;
 - signal date and target weights;
-- Internal expected fill and IBKR Paper fill;
-- execution difference, order status and reconciliation status.
+- immutable signal/execution evidence and fixed Strategy Health rules.
+
+Internal expected fill versus IBKR Paper fill, broker order status and broker
+reconciliation remain future additions after Phases 4–7 pass.
 
 It must clearly display:
 
@@ -233,4 +249,6 @@ This roadmap must not:
 - enable IBKR Live;
 - trigger a GitHub push.
 
-The next executable milestone remains Phase 2, followed by verification of the Phase 3 Internal Simulator lifecycle. IBKR work begins only after that gate is explicitly confirmed.
+The current executable milestone is Phase 9: accumulate the Forward track
+record while monitoring the daily automation and resolving corporate actions
+through the fail-closed review path. IBKR work remains a separate gated phase.

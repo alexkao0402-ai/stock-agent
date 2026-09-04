@@ -21,7 +21,11 @@ from src.dashboard_cloud_snapshot import (
     load_signed_snapshot,
     load_supabase_snapshot,
 )
-from src.dashboard_read_model import DEFAULT_LEDGER_PATH, build_dashboard_snapshot
+from src.dashboard_read_model import (
+    DEFAULT_LEDGER_PATH,
+    HISTORICAL_SHARPE,
+    build_dashboard_snapshot,
+)
 from src.stock_data import (
     clean_stock_data,
     get_company_overview,
@@ -414,9 +418,12 @@ def render_market() -> None:
 
 
 def render_strategy_health() -> None:
-    _header("Strategy Health", "策略狀況", "固定規則監控策略與系統；只有資料或執行異常能阻止交易。")
+    _header("Strategy Health", "策略狀況", "先確認系統能否安全運作，再分開查看策略的 Forward 證據。")
     _paper_banner()
     state = _dashboard_state()
+
+    st.markdown("### System Health · 系統狀態")
+    st.caption("只檢查資料、Ledger、同步與執行是否正常；這一區可以阻止交易。")
     _status_badge(state["health_status"], state["health_label"])
     if state["trading_blocked"]:
         st.error("交易已被系統層阻止：" + (state["integrity_error"] or state["execution_status"]))
@@ -426,13 +433,29 @@ def render_strategy_health() -> None:
     else:
         st.success("資料完整、執行狀態正常；Frozen V12 規則保持不變。")
 
-    first = st.columns(5)
-    first[0].metric("V12 狀態", "FROZEN")
-    first[1].metric("SPY Regime", state["market_regime"] or "—")
+    operational_metrics = st.columns(4)
+    operational_metrics[0].metric("V12 狀態", "FROZEN")
+    operational_metrics[1].metric(
+        "Ledger / Sync",
+        "異常" if state["integrity_error"] else "已驗證",
+    )
+    operational_metrics[2].metric("T+1 執行", state["execution_status"])
+    operational_metrics[3].metric("資料截至", state["last_data_asof"] or "—")
+
+    with st.container(border=True):
+        st.markdown("#### 🔴 系統異常 · 可阻止交易")
+        st.write("- Ledger hash / schema / JSON 驗證失敗")
+        st.write("- 訊號已存在但缺少訂單，或 T+1 已逾期")
+        st.write("- 資料不完整、時間錯誤或會計無法對帳")
+
+    st.markdown("### Strategy Evidence · 策略證據")
+    st.caption("以下績效只使用正式 Forward Ledger；歷史回測不會混入 Equity Curve 或累積報酬。")
+    evidence = st.columns(4)
+    evidence[0].metric("SPY Regime", state["market_regime"] or "—")
     agreement = "—" if state["agreement_count"] is None else f"{state['agreement_count']} 檔重疊"
-    first[2].metric("V7 / V8 agreement", agreement)
-    first[3].metric("Drawdown", _pct(state["max_drawdown"]))
-    first[4].metric("資料截至", state["last_data_asof"] or "—")
+    evidence[1].metric("V7 / V8 agreement", agreement)
+    evidence[2].metric("Forward Drawdown", _pct(state["max_drawdown"]))
+    evidence[3].metric("正式配置批次", str(state["formal_forward_rows"]))
 
     second = st.columns(4)
     second[0].metric("12M Rolling Sharpe", "—" if state["rolling_sharpe"] is None else f"{state['rolling_sharpe']:.2f}")
@@ -440,20 +463,19 @@ def render_strategy_health() -> None:
     second[2].metric("T+1", _pct(state["t1_return"]))
     second[3].metric("T+2 / 差異", "—" if state["t2_return"] is None else f"{_pct(state['t2_return'])} / {_pct(state['t1_t2_spread'], points=True)}")
 
-    st.markdown("### 固定狀態規則")
-    operational, statistical = st.columns(2)
-    with operational:
+    evidence_rules, historical_reference = st.columns(2)
+    with evidence_rules:
         with st.container(border=True):
-            st.markdown("#### 🔴 系統異常 · 可阻止交易")
-            st.write("- Ledger hash / schema / JSON 驗證失敗")
-            st.write("- 訊號已存在但缺少訂單或 T+1 已逾期")
-            st.write("- 資料不完整、時間錯誤或會計無法對帳")
-    with statistical:
-        with st.container(border=True):
-            st.markdown("#### 🟡 績效觀察 · 不修改策略")
-            st.write("- 少於 13 個月正式 snapshot：樣本不足")
+            st.markdown("#### 🟡 Forward 績效觀察")
+            st.write("- 少於 252 個每日報酬觀察值：樣本不足")
             st.write("- Rolling Sharpe < 0：進入觀察")
             st.write("- Forward drawdown ≤ −20%：啟動研究檢查")
+            st.caption("這些條件只會警告，不會修改或停止 Frozen V12。")
+    with historical_reference:
+        with st.container(border=True):
+            st.markdown("#### Historical Reference · 不是 Forward")
+            st.metric("Frozen V12 歷史 Sharpe", f"{HISTORICAL_SHARPE:.2f}")
+            st.caption("僅作為凍結前研究基準；不會被加入正式 Forward 報酬或曲線。")
     st.info("短期績效不好只能警告。Dashboard 不會調整 lookback、權重、股票池、執行日或任何 Frozen V12 規則。")
     st.markdown('<div class="read-only">資料流：Frozen V12 → Forward Engine → SQLite / Evidence → Read-only UI → Streamlit。</div>', unsafe_allow_html=True)
 
