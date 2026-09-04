@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+secrets.toml
+.streamlit/secrets.toml
 *.pem
 *.key
 
@@ -14,11 +16,18 @@ ENV/
 # Runtime data
 cache/
 predictions/
+signal_snapshots/
+live_forward_inputs/
+live_forward_signals/
+live_forward_runs/
+paper_ledger/
+dashboard_exports/
 logs/
 *.log
 
 # Python artifacts
 __pycache__/
+**/__pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/

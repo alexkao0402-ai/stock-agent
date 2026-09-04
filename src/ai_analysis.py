@@ -1,13 +1,86 @@
 # ai_analysis.py
 # 這個檔案負責處理「把股價資料 + 新聞資料 + 公司基本面資料交給 AI 分析」的功能
 
-import os
+import re
 from anthropic import Anthropic
 from dotenv import load_dotenv
+import requests
+from src.config import get_secret
 
 load_dotenv()
+GEMINI_COMPACT_MODEL = "gemini-flash-lite-latest"
 
-client = Anthropic()
+
+class AIConfigurationError(RuntimeError):
+    pass
+
+
+def has_anthropic_key() -> bool:
+    return bool(get_secret("ANTHROPIC_API_KEY"))
+
+
+def has_gemini_key() -> bool:
+    return bool(get_secret("GEMINI_API_KEY"))
+
+
+def has_compact_ai_key() -> bool:
+    """Return whether the dashboard summary has an available AI provider."""
+    return has_gemini_key() or has_anthropic_key()
+
+
+def compact_ai_provider() -> str | None:
+    """Return the provider used by compact summaries, in priority order."""
+    if has_gemini_key():
+        return "Gemini Flash-Lite"
+    if has_anthropic_key():
+        return "Anthropic Claude"
+    return None
+
+
+def _anthropic_client() -> Anthropic:
+    api_key = get_secret("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise AIConfigurationError("ANTHROPIC_API_KEY is not configured.")
+    return Anthropic(api_key=api_key)
+
+
+def _gemini_generate(prompt: str, *, max_output_tokens: int = 550) -> str:
+    """Generate text with Gemini without adding another SDK dependency."""
+    api_key = get_secret("GEMINI_API_KEY")
+    if not api_key:
+        raise AIConfigurationError("GEMINI_API_KEY is not configured.")
+
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_COMPACT_MODEL}:generateContent"
+    )
+    try:
+        response = requests.post(
+            url,
+            headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+            json={
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "maxOutputTokens": max_output_tokens,
+                    "temperature": 0.2,
+                },
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
+        candidates = data.get("candidates") or []
+        parts = (candidates[0].get("content") or {}).get("parts") if candidates else []
+        text = "".join(str(part.get("text") or "") for part in (parts or [])).strip()
+        if not text:
+            raise AIConfigurationError("Gemini did not return summary text.")
+        return text
+    except requests.RequestException as exc:
+        status = getattr(exc.response, "status_code", None)
+        detail = f"HTTP {status}" if status else "network error"
+        raise AIConfigurationError(f"Gemini request failed ({detail}).") from exc
+    except (TypeError, ValueError) as exc:
+        raise AIConfigurationError("Gemini returned an invalid response.") from exc
 
 
 def format_news_for_prompt(news_list, max_items=15):
@@ -123,9 +196,29 @@ def generate_report(symbol, df, news_list=None, overview=None):
 - 如果某個價格波動找不到對應的新聞可以解釋，請誠實說明「未找到明確對應消息」，不要臆測捏造原因
 - 價格區間是「基於歷史波動幅度與現有消息面的粗略推估」，絕對不要用「將會達到」「保證」這類肯定語氣，要用「可能」「傾向」「若條件成立」這類語氣
 - 進場區、停利區、失效價位是「研究性質的參考區間」，不是明確的買賣訊號，請在這部分結尾明確提醒讀者：這不是投資建議，實際操作應自行判斷並考量自身風險承受度
-- 這整份報告只是研究觀察與情境推演，不是投資建議，也不是精確預測"""
+- 這整份報告只是研究觀察與情境推演，不是投資建議，也不是精確預測
 
-    message = client.messages.create(
+輸出時，請先放以下結構化註解，再接續完整報告。註解中的數字必須與後方報告完全一致：
+<!--STRUCTURED_JSON
+{{
+  "current_price": {float(df['close'].iloc[-1])},
+  "bull_low": 數字或null,
+  "bull_high": 數字或null,
+  "base_low": 數字或null,
+  "base_high": 數字或null,
+  "bear_low": 數字或null,
+  "bear_high": 數字或null,
+  "entry_zone_low": 數字或null,
+  "entry_zone_high": 數字或null,
+  "take_profit_low": 數字或null,
+  "take_profit_high": 數字或null,
+  "invalidation_down": 數字或null,
+  "invalidation_up": 數字或null
+}}
+-->
+不要用 Markdown code fence 包住這個註解。"""
+
+    message = _anthropic_client().messages.create(
         model="claude-sonnet-4-5",
         max_tokens=4096,
         messages=[
@@ -136,6 +229,40 @@ def generate_report(symbol, df, news_list=None, overview=None):
     report_text = message.content[0].text
 
     return report_text
+
+
+def generate_compact_summary(symbol, df, news_list=None, overview=None):
+    """Generate a short evidence-based dashboard summary.
+
+    This is intentionally separate from the legacy Bull/Base/Bear report.  It
+    uses a small prompt and returns only three to five bullets without price
+    targets or trading instructions.
+    """
+    recent = df.tail(20)[[column for column in ("date", "close", "volume") if column in df.columns]]
+    prompt = f"""你是股票研究儀表板的摘要編輯。
+
+股票：{symbol}
+近期價格資料：
+{recent.to_string(index=False)}
+
+公司資料：
+{format_overview_for_prompt(overview or {})}
+
+近期新聞：
+{format_news_for_prompt(news_list or [], max_items=5)}
+
+請只輸出 3 到 5 個繁體中文條列重點，每點一到兩句。優先說明：
+1. 最近價格與波動；2. 最新財報或基本面；3. 真正重要的新聞或公告；4. 主要資料缺口或風險。
+不要提供 Bull/Base/Bear 情境、目標價、買賣建議或保證。沒有資料時必須明確寫「資料不足」，不可猜測。"""
+    if has_gemini_key():
+        return _gemini_generate(prompt, max_output_tokens=550)
+
+    message = _anthropic_client().messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=550,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return message.content[0].text.strip()
 
 import json
 
@@ -151,6 +278,18 @@ def extract_structured_data(symbol, current_price, report_text):
     回傳：一個 Python 字典（如果解析失敗，回傳 None）
     """
 
+    embedded_match = re.search(
+        r"<!--STRUCTURED_JSON\s*(\{.*?\})\s*-->",
+        report_text,
+        flags=re.DOTALL,
+    )
+    if embedded_match:
+        try:
+            return json.loads(embedded_match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # 舊報告沒有內嵌 JSON 時，才使用第二次 AI 呼叫維持相容性。
     extraction_prompt = f"""以下是一份關於 {symbol} 的股票研究報告：
 
 {report_text}
@@ -178,7 +317,7 @@ def extract_structured_data(symbol, current_price, report_text):
   "invalidation_up": 數字或null
 }}"""
 
-    message = client.messages.create(
+    message = _anthropic_client().messages.create(
         model="claude-sonnet-4-5",
         max_tokens=500,
         messages=[

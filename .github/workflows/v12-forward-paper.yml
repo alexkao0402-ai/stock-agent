@@ -1,0 +1,40 @@
+name: V12 forward paper automation
+
+on:
+  schedule:
+    # 23:30 UTC is safely after the regular NYSE close in both EST and EDT.
+    - cron: "30 23 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v12-forward-paper-production
+  cancel-in-progress: false
+
+jobs:
+  run-forward-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONUNBUFFERED: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      V12_DASHBOARD_SYNC_SECRET: ${{ secrets.V12_DASHBOARD_SYNC_SECRET }}
+      V12_DASHBOARD_SUPABASE_BUCKET: ${{ secrets.V12_DASHBOARD_SUPABASE_BUCKET }}
+      V12_DASHBOARD_SUPABASE_OBJECT: ${{ secrets.V12_DASHBOARD_SUPABASE_OBJECT }}
+      V12_FORWARD_STATE_SUPABASE_OBJECT: ${{ secrets.V12_FORWARD_STATE_SUPABASE_OBJECT }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install pinned dependencies
+        run: pip install -r requirements.txt
+      - name: Run unit tests before touching Forward state
+        run: python -m unittest discover -s tests -v
+      - name: Restore, process, verify, persist, and publish
+        run: python -m scripts.run_v12_forward_automation
