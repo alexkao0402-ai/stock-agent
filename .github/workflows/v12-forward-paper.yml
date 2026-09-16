@@ -37,4 +37,19 @@ jobs:
       - name: Run unit tests before touching Forward state
         run: python -m unittest discover -s tests -v
       - name: Restore, process, verify, persist, and publish
-        run: python -m scripts.run_v12_forward_automation
+        shell: bash
+        run: |
+          # The cycle is idempotent, so bounded retries are safe and protect
+          # against brief Supabase wake-up or network failures.
+          for attempt in 1 2 3; do
+            if python -m scripts.run_v12_forward_automation; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((attempt * 60))
+              echo "Forward cycle attempt ${attempt} failed; retrying in ${delay}s."
+              sleep "$delay"
+            fi
+          done
+          echo "Forward cycle failed after 3 attempts."
+          exit 1
