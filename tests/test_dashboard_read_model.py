@@ -117,6 +117,46 @@ class DashboardReadModelTests(unittest.TestCase):
             self.assertEqual(state["health_status"], "ERROR")
             self.assertEqual(state["execution_status"], "Overdue")
 
+    def test_latest_signal_does_not_reuse_previous_cycle_order(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "ledger.sqlite3"
+            ledger = AppendOnlyLedger(path)
+            old_signal = _event(
+                "V12_T1", "SIGNAL", sequence_key="old-signal",
+                payload={"signal_date": "2026-08-31", "portfolio_target_weights": {"NVDA": 1.0}},
+            )
+            old_order = _event(
+                "V12_T1", "ORDER", sequence_key="old-order", ticker="NVDA",
+                payload={"execution_date": "2026-09-01", "target_weight": 1.0, "status": "PENDING"},
+            )
+            old_snapshot = _event(
+                "V12_T1", "PORTFOLIO_SNAPSHOT", sequence_key="old-snapshot",
+                payload={"execution_date": "2026-09-01", "portfolio_equity": 10_000.0, "cash": 0.0, "positions": {}},
+            )
+            new_signal = LedgerEvent(**{
+                **old_signal.__dict__,
+                "event_id": deterministic_event_id("V12_T1", "SIGNAL", "new-signal"),
+                "signal_timestamp": "2026-09-30T16:00:00-04:00",
+                "data_asof": "2026-09-30T16:00:00-04:00",
+                "payload": {"signal_date": "2026-09-30", "portfolio_target_weights": {"MU": 1.0}},
+                "created_at": "2026-10-01T02:00:00+00:00",
+            })
+            new_order = LedgerEvent(**{
+                **old_order.__dict__,
+                "event_id": deterministic_event_id("V12_T1", "ORDER", "new-order", "MU"),
+                "signal_timestamp": "2026-09-30T16:00:00-04:00",
+                "data_asof": "2026-09-30T16:00:00-04:00",
+                "ticker": "MU",
+                "payload": {"execution_date": "2026-10-01", "target_weight": 1.0, "status": "PENDING"},
+                "created_at": "2026-10-01T02:00:00+00:00",
+            })
+            ledger.append_batch([old_signal, old_order, old_snapshot, new_signal, new_order])
+
+            state = build_dashboard_snapshot(path, today=date(2026, 9, 30))
+            self.assertEqual(state["signal_date"], "2026-09-30")
+            self.assertEqual(state["execution_date"], "2026-10-01")
+            self.assertEqual(state["execution_status"], "Waiting for T+1 open")
+
 
 if __name__ == "__main__":
     unittest.main()

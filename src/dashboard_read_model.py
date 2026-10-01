@@ -190,7 +190,10 @@ def _execution_status(events: list[dict[str, Any]], signal: dict[str, Any] | Non
     signal_date = str((signal.get("payload") or {}).get("signal_date", ""))
     matching_orders = [
         row for row in _portfolio_events(events, "V12_T1", "ORDER")
-        if str((row.get("payload") or {}).get("signal_date", signal_date)) == signal_date
+        if str(
+            (row.get("payload") or {}).get("signal_date")
+            or row.get("signal_timestamp", "")[:10]
+        ) == signal_date
     ]
     execution_dates = sorted({
         str((row.get("payload") or {}).get("execution_date", ""))
