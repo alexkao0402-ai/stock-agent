@@ -43,7 +43,7 @@ class DashboardReadModelTests(unittest.TestCase):
             self.assertEqual(state["formal_forward_rows"], 0)
             self.assertEqual(state["health_status"], "WATCH")
             self.assertFalse(state["trading_blocked"])
-            self.assertIn("尚未產生第一筆正式 Forward Signal", state["warnings"])
+            self.assertIn("The first official Forward Signal has not been generated", state["warnings"])
 
     def test_projects_portfolio_benchmarks_signal_and_holdings(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -93,7 +93,7 @@ class DashboardReadModelTests(unittest.TestCase):
             self.assertAlmostEqual(state["excess_vs_qqq"], 0.02)
             self.assertAlmostEqual(state["t1_t2_spread"], 0.005)
             self.assertEqual(state["agreement_count"], 1)
-            self.assertEqual(state["execution_status"], "已執行")
+            self.assertEqual(state["execution_status"], "Executed")
             self.assertEqual(state["holdings"][0]["ticker"], "NVDA")
             self.assertEqual(set(state["curve"]["series"]), {"V12", "SPY", "QQQ"})
 
@@ -115,7 +115,7 @@ class DashboardReadModelTests(unittest.TestCase):
             state = build_dashboard_snapshot(path, today=date(2026, 9, 2))
             self.assertTrue(state["trading_blocked"])
             self.assertEqual(state["health_status"], "ERROR")
-            self.assertEqual(state["execution_status"], "逾期未執行")
+            self.assertEqual(state["execution_status"], "Overdue")
 
 
 if __name__ == "__main__":

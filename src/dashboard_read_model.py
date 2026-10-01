@@ -186,7 +186,7 @@ def _latest_signal(events: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 def _execution_status(events: list[dict[str, Any]], signal: dict[str, Any] | None, today: date) -> tuple[str, bool, str | None]:
     if signal is None:
-        return "尚未產生", False, None
+        return "Not generated", False, None
     signal_date = str((signal.get("payload") or {}).get("signal_date", ""))
     matching_orders = [
         row for row in _portfolio_events(events, "V12_T1", "ORDER")
@@ -203,14 +203,14 @@ def _execution_status(events: list[dict[str, Any]], signal: dict[str, Any] | Non
         for row in _snapshots(events, "V12_T1")
     ) if scheduled else False
     if completed:
-        return "已執行", False, scheduled
+        return "Executed", False, scheduled
     if scheduled:
         try:
             overdue = today > date.fromisoformat(scheduled)
         except ValueError:
             overdue = True
-        return ("逾期未執行" if overdue else "等待 T+1 開盤"), overdue, scheduled
-    return "等待訂單資料", True, None
+        return ("Overdue" if overdue else "Waiting for T+1 open"), overdue, scheduled
+    return "Waiting for order data", True, None
 
 
 def build_dashboard_snapshot(
@@ -266,24 +266,24 @@ def build_dashboard_snapshot(
 
     statistical_warnings: list[str] = []
     if not events:
-        statistical_warnings.append("尚未產生第一筆正式 Forward Signal")
+        statistical_warnings.append("The first official Forward Signal has not been generated")
     elif rolling_sharpe is None:
-        statistical_warnings.append("Forward 樣本不足，尚不能計算 12 個月 Rolling Sharpe")
+        statistical_warnings.append("Insufficient Forward history to calculate 12-month Rolling Sharpe")
     elif rolling_sharpe < 0.0:
-        statistical_warnings.append("Rolling Sharpe 低於 0，需觀察但不改動 Frozen V12")
+        statistical_warnings.append("Rolling Sharpe is below 0; monitor without changing Frozen V12")
     if drawdown is not None and drawdown <= -0.20:
-        statistical_warnings.append("Forward drawdown 已超過 20%，需研究但不自動停用策略")
+        statistical_warnings.append("Forward drawdown exceeded 20%; review without automatically disabling the strategy")
 
     blocked = bool(integrity_error or overdue)
     if blocked:
         health_status = "ERROR"
-        health_label = "系統異常"
+        health_label = "System Error"
     elif statistical_warnings:
         health_status = "WATCH"
-        health_label = "觀察"
+        health_label = "Watch"
     else:
         health_status = "NORMAL"
-        health_label = "正常"
+        health_label = "Normal"
 
     last_data_asof = str(events[-1]["data_asof"]) if events else None
     return {

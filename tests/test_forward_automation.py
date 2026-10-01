@@ -14,6 +14,21 @@ CONFIG = {
 
 
 class ForwardAutomationTests(unittest.TestCase):
+    @patch("scripts.run_v12_forward_automation.subprocess.run")
+    @patch("scripts.run_v12_forward_automation.is_month_end_session", return_value=True)
+    @patch("scripts.run_v12_forward_automation.is_session", return_value=True)
+    @patch("scripts.run_v12_forward_automation.download_forward_state", return_value="RESTORED")
+    @patch("scripts.run_v12_forward_automation._commit", return_value="abc")
+    @patch("scripts.run_v12_forward_automation._cloud_configuration", return_value=CONFIG)
+    def test_month_end_capture_runs_as_module_and_reports_stderr(
+        self, config, commit, download, is_session, month_end, run,
+    ):
+        run.return_value = MagicMock(returncode=1, stdout="", stderr="module import failed")
+        with self.assertRaisesRegex(RuntimeError, "module import failed"):
+            run_cycle(now=datetime(2026, 10, 1, 2, 16, tzinfo=timezone.utc))
+        command = run.call_args.args[0]
+        self.assertEqual(command[1:], ["-m", "scripts.capture_v12_live_inputs"])
+
     @patch("scripts.run_v12_forward_automation._publish_dashboard")
     @patch("scripts.run_v12_forward_automation.is_session", return_value=False)
     @patch("scripts.run_v12_forward_automation.download_forward_state", return_value="RESTORED")

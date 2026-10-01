@@ -179,10 +179,10 @@ def _dashboard_state() -> dict[str, Any]:
         state = build_dashboard_snapshot(Path("__cloud_snapshot_unavailable__.sqlite3"))
         state.update({
             "health_status": "ERROR",
-            "health_label": "同步異常",
+            "health_label": "Sync Error",
             "trading_blocked": True,
             "integrity_error": str(exc),
-            "warnings": ["雲端 Dashboard Snapshot 無法驗證"],
+            "warnings": ["The cloud Dashboard snapshot could not be verified"],
         })
         return state
 
@@ -213,7 +213,7 @@ def _yahoo_company_events(symbol: str) -> dict[str, list[dict[str, str]]]:
             filings.append({
                 "date": str(item.get("date") or item.get("filingDate") or "")[:10],
                 "type": str(item.get("type") or item.get("formType") or "SEC Filing"),
-                "title": str(item.get("title") or item.get("description") or "公司申報"),
+                "title": str(item.get("title") or item.get("description") or "Company filing"),
                 "url": str(item.get("edgarUrl") or item.get("url") or ""),
             })
     except Exception:
@@ -240,14 +240,14 @@ def _market_payload(symbol: str) -> dict[str, Any]:
 
 
 def render_overview() -> None:
-    _header("Portfolio", "總覽 / 模擬交易", "只呈現 Frozen V12 的正式 Forward 證據，不使用回測數字填補空白。")
+    _header("Portfolio", "Overview / Paper Trading", "Official Frozen V12 Forward evidence only. Historical backtests never fill gaps in this view.")
     _paper_banner()
     state = _dashboard_state()
     if state["integrity_error"]:
-        st.error(f"Dashboard 資料同步異常：{state['integrity_error']}")
+        st.error(f"Dashboard sync error: {state['integrity_error']}")
     columns = st.columns(5)
     columns[0].metric("Portfolio Value", _money(state["portfolio_value"]))
-    columns[1].metric("累積報酬", _pct(state["cumulative_return"]))
+    columns[1].metric("Cumulative Return", _pct(state["cumulative_return"]))
     columns[2].metric("vs SPY", _pct(state["excess_vs_spy"], points=True))
     columns[3].metric("vs QQQ", _pct(state["excess_vs_qqq"], points=True))
     columns[4].metric("MDD", _pct(state["max_drawdown"]))
@@ -255,7 +255,7 @@ def render_overview() -> None:
     st.markdown("### V12 vs SPY vs QQQ")
     curve = state["curve"]
     if state["formal_forward_rows"] == 0 or curve.empty:
-        st.markdown('<div class="empty-state"><h3>尚未產生第一筆正式 Forward Signal</h3><p>Dashboard 不會用歷史回測或示意數字假裝成 Forward 績效。</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="empty-state"><h3>The first official Forward Signal has not been generated</h3><p>The Dashboard never presents backtest or illustrative values as Forward performance.</p></div>', unsafe_allow_html=True)
     else:
         figure = go.Figure()
         for name in ("V12", "SPY", "QQQ"):
@@ -277,62 +277,62 @@ def render_overview() -> None:
         st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
 
     if state["holdings"]:
-        portfolio_value = f'{len(state["holdings"])} 檔持股'
+        portfolio_value = f'{len(state["holdings"])} holdings'
         lines = []
         for position in state["holdings"]:
             weight = position.get("target_weight")
             weight_text = "—" if weight is None else f"{float(weight):.0%}"
             lines.append(f'{html.escape(str(position.get("ticker") or "—"))} · {weight_text}')
-        portfolio_detail = f'{"<br>".join(lines)}<br>現金 · {_money(state["cash"])}'
+        portfolio_detail = f'{"<br>".join(lines)}<br>Cash · {_money(state["cash"])}'
     else:
-        portfolio_value = "0 檔持股"
-        portfolio_detail = "等待第一筆正式 Forward 配置<br>現金 · —"
+        portfolio_value = "0 holdings"
+        portfolio_detail = "Waiting for the first official Forward allocation<br>Cash · —"
     if state["latest_signal"] is None:
-        signal_value = "尚未產生"
-        signal_detail = "等待正式月末訊號<br>SPY Regime · —"
+        signal_value = "Not generated"
+        signal_detail = "Waiting for the official month-end signal<br>SPY Regime · —"
     else:
         signal_value = html.escape(state["signal_date"] or "—")
         selections = " · ".join(f"{ticker} {weight:.0%}" for ticker, weight in state["target_weights"].items()) or "—"
         signal_detail = f'SPY Regime · {html.escape(state["market_regime"] or "—")}<br>{html.escape(selections)}'
     execution_value = html.escape(state["execution_status"])
-    execution_detail = f'預定執行日 · {html.escape(state["execution_date"] or "—")}<br>執行規則 · T+1 Open'
+    execution_detail = f'Scheduled execution · {html.escape(state["execution_date"] or "—")}<br>Execution rule · T+1 Open'
     st.markdown(
         f'''
         <div class="overview-card-grid">
-          <section class="overview-card"><div class="overview-card-kicker">PORTFOLIO</div><div class="overview-card-title">目前持股與現金</div><div class="overview-card-value">{portfolio_value}</div><div class="overview-card-detail">{portfolio_detail}</div></section>
-          <section class="overview-card"><div class="overview-card-kicker">LATEST SIGNAL</div><div class="overview-card-title">最新 V12 訊號</div><div class="overview-card-value">{signal_value}</div><div class="overview-card-detail">{signal_detail}</div></section>
-          <section class="overview-card"><div class="overview-card-kicker">EXECUTION</div><div class="overview-card-title">T+1 執行</div><div class="overview-card-value">{execution_value}</div><div class="overview-card-detail">{execution_detail}</div></section>
+          <section class="overview-card"><div class="overview-card-kicker">PORTFOLIO</div><div class="overview-card-title">Current Holdings & Cash</div><div class="overview-card-value">{portfolio_value}</div><div class="overview-card-detail">{portfolio_detail}</div></section>
+          <section class="overview-card"><div class="overview-card-kicker">LATEST SIGNAL</div><div class="overview-card-title">Latest V12 Signal</div><div class="overview-card-value">{signal_value}</div><div class="overview-card-detail">{signal_detail}</div></section>
+          <section class="overview-card"><div class="overview-card-kicker">EXECUTION</div><div class="overview-card-title">T+1 Execution</div><div class="overview-card-value">{execution_value}</div><div class="overview-card-detail">{execution_detail}</div></section>
         </div>
         ''',
         unsafe_allow_html=True,
     )
 
     if state["events"]:
-        with st.expander("查看不可回寫的事件紀錄"):
+        with st.expander("View immutable event records"):
             rows = pd.DataFrame([{key: row.get(key) for key in ("sequence", "created_at", "portfolio_id", "event_type", "ticker", "action", "data_asof")} for row in reversed(state["events"][-100:])])
             st.dataframe(rows, width="stretch", hide_index=True)
-    st.markdown('<div class="read-only">Read-only UI：此頁不會建立、更新或刪除 Signal、Order、Fill、Position 或 Ledger event。</div>', unsafe_allow_html=True)
+    st.markdown('<div class="read-only">Read-only UI: this page cannot create, update, or delete Signals, Orders, Fills, Positions, or Ledger events.</div>', unsafe_allow_html=True)
 
 
 def render_market() -> None:
-    _header("Market Intelligence", "市場情報", "價格、財報、重大新聞與公司公告集中在同一頁；不恢復冗長情境報告。")
+    _header("Market Intelligence", "Market Intelligence", "Prices, earnings, material news, and company filings in one concise view.")
     search, action = st.columns([5, 1])
     with search:
-        symbol = st.text_input("股票代號", value=st.session_state.get("market_symbol", ""), placeholder="例如 AAPL、NVDA", label_visibility="collapsed").strip().upper()
+        symbol = st.text_input("Ticker", value=st.session_state.get("market_symbol", ""), placeholder="For example: AAPL or NVDA", label_visibility="collapsed").strip().upper()
     with action:
-        clicked = st.button("搜尋", type="primary", width="stretch")
+        clicked = st.button("Search", type="primary", width="stretch")
     if clicked:
         st.session_state["market_symbol"] = symbol
     symbol = st.session_state.get("market_symbol", "")
     if not symbol:
-        st.info("輸入股票代號並按「搜尋」開始查看；進入此頁不會自動呼叫外部資料或 AI API。")
+        st.info("Enter a ticker and select Search. Opening this page does not automatically call external data or AI APIs.")
         return
 
-    with st.spinner(f"載入 {symbol} 市場資料…"):
+    with st.spinner(f"Loading market data for {symbol}…"):
         payload = _market_payload(symbol)
     prices = payload["prices"]
     if prices.empty:
-        st.error("無法取得價格資料。請檢查股票代號或稍後再試。")
+        st.error("Price data is unavailable. Check the ticker or try again later.")
         return
     overview = payload["overview"] or {}
     current = float(prices["close"].iloc[-1])
@@ -341,8 +341,8 @@ def render_market() -> None:
     company = overview.get("公司名稱") or symbol
     st.markdown(f"### {html.escape(symbol)} · {html.escape(str(company))}")
     price_col, meta_col = st.columns([1, 2])
-    price_col.metric("最新收盤", _money(current), f"{daily_change:+.2%}")
-    meta_col.caption(f"資料來源：{payload['source']} · 截至 {prices['date'].iloc[-1]} · 非即時報價")
+    price_col.metric("Latest Close", _money(current), f"{daily_change:+.2%}")
+    meta_col.caption(f"Source: {payload['source']} · As of {prices['date'].iloc[-1]} · Delayed data")
 
     figure = go.Figure(go.Scatter(
         x=pd.to_datetime(prices["date"]), y=prices["close"], mode="lines",
@@ -356,26 +356,26 @@ def render_market() -> None:
     )
     st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
 
-    st.markdown("### 財報與基本面")
+    st.markdown("### Earnings & Fundamentals")
     metrics = st.columns(5)
-    metrics[0].metric("市值", _number(overview.get("市值"), currency=True))
-    metrics[1].metric("本益比", _number(overview.get("本益比")))
+    metrics[0].metric("Market Cap", _number(overview.get("市值"), currency=True))
+    metrics[1].metric("P/E", _number(overview.get("本益比")))
     metrics[2].metric("EPS", _number(overview.get("每股盈餘"), currency=True))
-    metrics[3].metric("毛利率", "—" if overview.get("毛利率") is None else f"{overview['毛利率']:.2f}%")
+    metrics[3].metric("Gross Margin", "—" if overview.get("毛利率") is None else f"{overview['毛利率']:.2f}%")
     try:
         operating_margin = float(overview["營業利益率"])
     except (KeyError, TypeError, ValueError):
         operating_margin = None
-    metrics[4].metric("營業利益率", _pct(operating_margin))
+    metrics[4].metric("Operating Margin", _pct(operating_margin))
     if payload["earnings"]:
-        with st.expander("近期 / 預定財報日期", expanded=True):
-            st.dataframe(pd.DataFrame(payload["earnings"]).rename(columns={"date": "日期", "estimate": "EPS 預估", "reported": "EPS 實際", "surprise": "驚喜幅度"}), width="stretch", hide_index=True)
+        with st.expander("Recent / Scheduled Earnings", expanded=True):
+            st.dataframe(pd.DataFrame(payload["earnings"]).rename(columns={"date": "Date", "estimate": "EPS Estimate", "reported": "Reported EPS", "surprise": "Surprise"}), width="stretch", hide_index=True)
     elif not has_alpha_vantage_key():
-        st.caption("尚未設定 Alpha Vantage；部分基本面與財報欄位可能無法顯示。")
+        st.caption("Alpha Vantage is not configured; some earnings and fundamental fields may be unavailable.")
 
     news_col, filing_col = st.columns(2)
     with news_col:
-        st.markdown("### 重大新聞")
+        st.markdown("### Material News")
         if payload["news"]:
             for item in payload["news"][:5]:
                 title = html.escape(str(item.get("title") or "Untitled"))
@@ -384,9 +384,9 @@ def render_market() -> None:
                 meta = " · ".join(filter(None, [str(item.get("source") or ""), str(item.get("time_published") or "")]))
                 st.markdown(f'<div class="event-card">{link}<div class="event-meta">{html.escape(meta)}</div></div>', unsafe_allow_html=True)
         else:
-            st.info("目前沒有可用新聞；設定 ALPHAVANTAGE_API_KEY 後可補充新聞資料。")
+            st.info("No news is currently available. Configure ALPHAVANTAGE_API_KEY to add news coverage.")
     with filing_col:
-        st.markdown("### SEC / 公司公告")
+        st.markdown("### SEC / Company Filings")
         if payload["filings"]:
             for item in payload["filings"][:5]:
                 title = f"{item['type']} · {item['title']}"
@@ -394,90 +394,90 @@ def render_market() -> None:
                 link = f'<a href="{url}" target="_blank">{html.escape(title)}</a>' if url else html.escape(title)
                 st.markdown(f'<div class="event-card">{link}<div class="event-meta">{html.escape(item["date"])}</div></div>', unsafe_allow_html=True)
         else:
-            st.info("Yahoo Finance 目前沒有回傳可用的 SEC / 公司公告。")
+            st.info("Yahoo Finance did not return any available SEC or company filings.")
 
-    st.markdown("### AI 重點摘要")
-    st.caption("AI 僅整理已顯示的價格、基本面與新聞；不產生目標價或買賣指令。")
+    st.markdown("### AI Key Takeaways")
+    st.caption("AI summarizes only the displayed prices, fundamentals, and news. It does not provide price targets or trading instructions.")
     provider = compact_ai_provider()
     if provider:
-        st.caption(f"摘要服務：{provider}")
+        st.caption(f"Summary provider: {provider}")
     summary_key = f"compact_summary_{symbol}"
     if summary_key in st.session_state:
         st.markdown(st.session_state[summary_key])
-    if st.button("產生 3–5 點摘要", key=f"summary_button_{symbol}"):
+    if st.button("Generate 3–5 Takeaways", key=f"summary_button_{symbol}"):
         if not has_compact_ai_key():
-            st.warning("尚未設定 GEMINI_API_KEY 或 ANTHROPIC_API_KEY，無法產生 AI 摘要。")
+            st.warning("GEMINI_API_KEY or ANTHROPIC_API_KEY is not configured, so an AI summary cannot be generated.")
         else:
             try:
-                with st.spinner("整理重點…"):
+                with st.spinner("Preparing key takeaways…"):
                     summary = generate_compact_summary(symbol, prices, payload["news"], overview)
                 st.session_state[summary_key] = summary
                 st.rerun()
             except Exception as exc:
-                st.error(f"AI 摘要暫時無法使用：{exc}")
+                st.error(f"AI summary is temporarily unavailable: {exc}")
 
 
 def render_strategy_health() -> None:
-    _header("Strategy Health", "策略狀況", "先確認系統能否安全運作，再分開查看策略的 Forward 證據。")
+    _header("Strategy Health", "Strategy Health", "Confirm operational safety first, then review the strategy's Forward evidence separately.")
     _paper_banner()
     state = _dashboard_state()
 
-    st.markdown("### System Health · 系統狀態")
-    st.caption("只檢查資料、Ledger、同步與執行是否正常；這一區可以阻止交易。")
+    st.markdown("### System Health")
+    st.caption("Checks data, Ledger integrity, synchronization, and execution. Operational failures can block trading.")
     _status_badge(state["health_status"], state["health_label"])
     if state["trading_blocked"]:
-        st.error("交易已被系統層阻止：" + (state["integrity_error"] or state["execution_status"]))
+        st.error("Trading is blocked by the system: " + (state["integrity_error"] or state["execution_status"]))
     elif state["warnings"]:
         for warning in state["warnings"]:
             st.warning(warning)
     else:
-        st.success("資料完整、執行狀態正常；Frozen V12 規則保持不變。")
+        st.success("Data integrity and execution status are normal. Frozen V12 remains unchanged.")
 
     operational_metrics = st.columns(4)
-    operational_metrics[0].metric("V12 狀態", "FROZEN")
+    operational_metrics[0].metric("V12 Status", "FROZEN")
     operational_metrics[1].metric(
         "Ledger / Sync",
-        "異常" if state["integrity_error"] else "已驗證",
+        "Error" if state["integrity_error"] else "Verified",
     )
-    operational_metrics[2].metric("T+1 執行", state["execution_status"])
-    operational_metrics[3].metric("資料截至", state["last_data_asof"] or "—")
+    operational_metrics[2].metric("T+1 Execution", state["execution_status"])
+    operational_metrics[3].metric("Data As Of", state["last_data_asof"] or "—")
 
     with st.container(border=True):
-        st.markdown("#### 🔴 系統異常 · 可阻止交易")
-        st.write("- Ledger hash / schema / JSON 驗證失敗")
-        st.write("- 訊號已存在但缺少訂單，或 T+1 已逾期")
-        st.write("- 資料不完整、時間錯誤或會計無法對帳")
+        st.markdown("#### 🔴 System Errors That Can Block Trading")
+        st.write("- Ledger hash, schema, or JSON verification failure")
+        st.write("- A signal exists without orders, or T+1 execution is overdue")
+        st.write("- Incomplete data, timestamp errors, or accounting reconciliation failure")
 
-    st.markdown("### Strategy Evidence · 策略證據")
-    st.caption("以下績效只使用正式 Forward Ledger；歷史回測不會混入 Equity Curve 或累積報酬。")
+    st.markdown("### Strategy Evidence")
+    st.caption("Performance uses only the official Forward Ledger. Historical backtests are excluded from the equity curve and cumulative return.")
     evidence = st.columns(4)
     evidence[0].metric("SPY Regime", state["market_regime"] or "—")
-    agreement = "—" if state["agreement_count"] is None else f"{state['agreement_count']} 檔重疊"
+    agreement = "—" if state["agreement_count"] is None else f"{state['agreement_count']} overlapping"
     evidence[1].metric("V7 / V8 agreement", agreement)
     evidence[2].metric("Forward Drawdown", _pct(state["max_drawdown"]))
-    evidence[3].metric("正式配置批次", str(state["formal_forward_rows"]))
+    evidence[3].metric("Official Allocation Batches", str(state["formal_forward_rows"]))
 
     second = st.columns(4)
     second[0].metric("12M Rolling Sharpe", "—" if state["rolling_sharpe"] is None else f"{state['rolling_sharpe']:.2f}")
     second[1].metric("Forward vs Backtest", "—" if state["sharpe_deviation"] is None else f"{state['sharpe_deviation']:+.2f} Sharpe")
     second[2].metric("T+1", _pct(state["t1_return"]))
-    second[3].metric("T+2 / 差異", "—" if state["t2_return"] is None else f"{_pct(state['t2_return'])} / {_pct(state['t1_t2_spread'], points=True)}")
+    second[3].metric("T+2 / Difference", "—" if state["t2_return"] is None else f"{_pct(state['t2_return'])} / {_pct(state['t1_t2_spread'], points=True)}")
 
     evidence_rules, historical_reference = st.columns(2)
     with evidence_rules:
         with st.container(border=True):
-            st.markdown("#### 🟡 Forward 績效觀察")
-            st.write("- 少於 252 個每日報酬觀察值：樣本不足")
-            st.write("- Rolling Sharpe < 0：進入觀察")
-            st.write("- Forward drawdown ≤ −20%：啟動研究檢查")
-            st.caption("這些條件只會警告，不會修改或停止 Frozen V12。")
+            st.markdown("#### 🟡 Forward Performance Watch")
+            st.write("- Fewer than 252 daily return observations: insufficient sample")
+            st.write("- Rolling Sharpe < 0: enter Watch status")
+            st.write("- Forward drawdown ≤ −20%: start a research review")
+            st.caption("These conditions only warn. They do not modify or stop Frozen V12.")
     with historical_reference:
         with st.container(border=True):
-            st.markdown("#### Historical Reference · 不是 Forward")
-            st.metric("Frozen V12 歷史 Sharpe", f"{HISTORICAL_SHARPE:.2f}")
-            st.caption("僅作為凍結前研究基準；不會被加入正式 Forward 報酬或曲線。")
-    st.info("短期績效不好只能警告。Dashboard 不會調整 lookback、權重、股票池、執行日或任何 Frozen V12 規則。")
-    st.markdown('<div class="read-only">資料流：Frozen V12 → Forward Engine → SQLite / Evidence → Read-only UI → Streamlit。</div>', unsafe_allow_html=True)
+            st.markdown("#### Historical Reference · Not Forward")
+            st.metric("Frozen V12 Historical Sharpe", f"{HISTORICAL_SHARPE:.2f}")
+            st.caption("This is a pre-freeze research reference only. It is never included in official Forward returns or curves.")
+    st.info("Weak short-term performance can only trigger a warning. The Dashboard cannot change lookbacks, weights, the universe, execution timing, or any Frozen V12 rule.")
+    st.markdown('<div class="read-only">Data flow: Frozen V12 → Forward Engine → SQLite / Evidence → Read-only UI → Streamlit.</div>', unsafe_allow_html=True)
 
 
 def main() -> None:
@@ -488,12 +488,12 @@ def main() -> None:
         st.divider()
         st.caption("Frozen strategy · Read-only dashboard")
     navigation = st.navigation([
-        st.Page(render_overview, title="總覽 / 模擬交易", icon="📊", default=True),
-        st.Page(render_market, title="市場情報", icon="📰"),
-        st.Page(render_strategy_health, title="策略狀況", icon="🛡️"),
+        st.Page(render_overview, title="Overview / Paper Trading", icon="📊", default=True),
+        st.Page(render_market, title="Market Intelligence", icon="📰"),
+        st.Page(render_strategy_health, title="Strategy Health", icon="🛡️"),
     ])
     navigation.run()
-    st.markdown('<div class="footer-note">僅供教育與研究使用。Paper trading 不代表真實成交；歷史績效不代表未來表現。</div>', unsafe_allow_html=True)
+    st.markdown('<div class="footer-note">For education and research only. Paper trading is not a real execution, and past performance does not predict future results.</div>', unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

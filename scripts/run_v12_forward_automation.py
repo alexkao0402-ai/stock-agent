@@ -134,13 +134,14 @@ def run_cycle(*, now: datetime | None = None) -> dict:
     captured = False
     if is_month_end_session(run_date):
         completed = subprocess.run(
-            [sys.executable, str(REPO_ROOT / "scripts" / "capture_v12_live_inputs.py")],
+            [sys.executable, "-m", "scripts.capture_v12_live_inputs"],
             cwd=REPO_ROOT,
             text=True,
             capture_output=True,
         )
         if completed.returncode != 0:
-            raise RuntimeError(f"month-end capture failed: {completed.stdout.strip()}")
+            details = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+            raise RuntimeError(f"month-end capture failed: {details}")
         captured = True
         _persist_forward_state(config, commit)
 

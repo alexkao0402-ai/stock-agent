@@ -239,21 +239,21 @@ def generate_compact_summary(symbol, df, news_list=None, overview=None):
     targets or trading instructions.
     """
     recent = df.tail(20)[[column for column in ("date", "close", "volume") if column in df.columns]]
-    prompt = f"""你是股票研究儀表板的摘要編輯。
+    prompt = f"""You are the editor for a stock research dashboard.
 
-股票：{symbol}
-近期價格資料：
+Stock: {symbol}
+Recent price data:
 {recent.to_string(index=False)}
 
-公司資料：
+Company data:
 {format_overview_for_prompt(overview or {})}
 
-近期新聞：
+Recent news:
 {format_news_for_prompt(news_list or [], max_items=5)}
 
-請只輸出 3 到 5 個繁體中文條列重點，每點一到兩句。優先說明：
-1. 最近價格與波動；2. 最新財報或基本面；3. 真正重要的新聞或公告；4. 主要資料缺口或風險。
-不要提供 Bull/Base/Bear 情境、目標價、買賣建議或保證。沒有資料時必須明確寫「資料不足」，不可猜測。"""
+Return only 3 to 5 concise English bullet points, with one or two sentences per bullet. Prioritize:
+1. Recent price movement and volatility; 2. Latest earnings or fundamentals; 3. Material news or company filings; 4. Important data gaps or risks.
+Do not provide Bull/Base/Bear scenarios, price targets, trading advice, or guarantees. If information is unavailable, clearly state "Insufficient data" and do not guess."""
     if has_gemini_key():
         return _gemini_generate(prompt, max_output_tokens=550)
 
