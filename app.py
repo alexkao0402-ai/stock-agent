@@ -240,7 +240,7 @@ def _market_payload(symbol: str) -> dict[str, Any]:
 
 
 def render_overview() -> None:
-    _header("Portfolio", "Overview / Paper Trading", "Official Frozen V12 Forward evidence only. Historical backtests never fill gaps in this view.")
+    _header("Portfolio", "Overview / Paper Trading", "Current paper portfolio, performance, and latest monthly rebalance.")
     _paper_banner()
     state = _dashboard_state()
     if state["integrity_error"]:
@@ -307,11 +307,35 @@ def render_overview() -> None:
         unsafe_allow_html=True,
     )
 
-    if state["events"]:
-        with st.expander("View immutable event records"):
-            rows = pd.DataFrame([{key: row.get(key) for key in ("sequence", "created_at", "portfolio_id", "event_type", "ticker", "action", "data_asof")} for row in reversed(state["events"][-100:])])
-            st.dataframe(rows, width="stretch", hide_index=True)
-    st.markdown('<div class="read-only">Read-only UI: this page cannot create, update, or delete Signals, Orders, Fills, Positions, or Ledger events.</div>', unsafe_allow_html=True)
+    st.markdown("### Latest Rebalance")
+    latest_trades = state.get("latest_trades") or []
+    if latest_trades:
+        execution_date = latest_trades[0].get("execution_date") or state.get("execution_date") or "—"
+        st.caption(f"Executed {execution_date} · T+1 market open")
+        trade_metrics = st.columns(3)
+        trade_metrics[0].metric("Bought", _money(state.get("latest_buy_value")))
+        trade_metrics[1].metric("Sold", _money(state.get("latest_sell_value")))
+        trade_metrics[2].metric("Fees", _money(state.get("latest_trade_fees")))
+        rows = []
+        for trade in latest_trades:
+            side = trade["action"]
+            if trade.get("is_trim"):
+                side = "SELL · TRIM"
+            rows.append({
+                "Side": side,
+                "Ticker": trade["ticker"],
+                "Shares": f'{trade["shares"]:,.4f}',
+                "Fill Price": _money(trade["fill_price"]),
+                "Trade Value": _money(trade["trade_value"]),
+                "Fee": _money(trade["fee"]),
+            })
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        if any(trade.get("is_trim") for trade in latest_trades):
+            st.caption("SELL · TRIM means the stock remained selected and only the excess above its target weight was sold.")
+    elif state["latest_signal"] is not None and state["execution_status"] != "Executed":
+        st.info("The latest signal is waiting for execution. Trade details will appear here after the T+1 open.")
+    elif state["latest_signal"] is not None:
+        st.info("No trades were required because the portfolio already matched the latest target weights.")
 
 
 def render_market() -> None:

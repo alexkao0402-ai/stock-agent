@@ -69,6 +69,16 @@ class DashboardReadModelTests(unittest.TestCase):
                 "V12_T1", "ORDER", sequence_key="order", ticker="NVDA",
                 payload={"execution_date": "2026-09-01", "target_weight": 0.5, "status": "PENDING"},
             ))
+            events.append(LedgerEvent(**{
+                **_event(
+                    "V12_T1", "FILL", sequence_key="fill", ticker="NVDA",
+                    payload={"execution_date": "2026-09-01", "signal_date": "2026-08-31", "sequence": 1},
+                ).__dict__,
+                "action": "BUY",
+                "fill_price": 100.0,
+                "quantity": 10.0,
+                "cost": 1.0,
+            }))
             snapshots = {
                 "V12_T1": 10_500.0,
                 "SPY_T1": 10_200.0,
@@ -96,6 +106,10 @@ class DashboardReadModelTests(unittest.TestCase):
             self.assertEqual(state["execution_status"], "Executed")
             self.assertEqual(state["holdings"][0]["ticker"], "NVDA")
             self.assertEqual(set(state["curve"]["series"]), {"V12", "SPY", "QQQ"})
+            self.assertEqual(state["latest_trades"][0]["ticker"], "NVDA")
+            self.assertAlmostEqual(state["latest_buy_value"], 1_000.0)
+            self.assertAlmostEqual(state["latest_sell_value"], 0.0)
+            self.assertAlmostEqual(state["latest_trade_fees"], 1.0)
 
     def test_overdue_signal_is_operational_error(self):
         with tempfile.TemporaryDirectory() as temp:

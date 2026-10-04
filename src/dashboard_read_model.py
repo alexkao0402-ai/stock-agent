@@ -216,6 +216,43 @@ def _execution_status(events: list[dict[str, Any]], signal: dict[str, Any] | Non
     return "Waiting for order data", True, None
 
 
+def _latest_rebalance(events: list[dict[str, Any]], signal: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if signal is None:
+        return []
+    signal_payload = signal.get("payload") or {}
+    signal_date = str(signal_payload.get("signal_date") or "")
+    target_weights = dict(
+        signal_payload.get("portfolio_target_weights")
+        or signal_payload.get("v12_target_weights")
+        or {}
+    )
+    rows = []
+    for event in _portfolio_events(events, "V12_T1", "FILL"):
+        payload = event.get("payload") or {}
+        event_signal_date = str(
+            payload.get("signal_date") or event.get("signal_timestamp", "")[:10]
+        )
+        if event_signal_date != signal_date:
+            continue
+        action = str(event.get("action") or "").upper()
+        ticker = str(event.get("ticker") or "")
+        quantity = abs(float(event.get("quantity") or 0.0))
+        fill_price = float(event.get("fill_price") or 0.0)
+        rows.append({
+            "sequence": int(payload.get("sequence") or 0),
+            "execution_date": payload.get("execution_date"),
+            "action": action,
+            "ticker": ticker,
+            "shares": quantity,
+            "fill_price": fill_price,
+            "trade_value": quantity * fill_price,
+            "fee": float(event.get("cost") or 0.0),
+            "is_trim": action == "SELL" and float(target_weights.get(ticker, 0.0)) > 0.0,
+            "target_weight": target_weights.get(ticker),
+        })
+    return sorted(rows, key=lambda row: row["sequence"])
+
+
 def build_dashboard_snapshot(
     path: str | Path = DEFAULT_LEDGER_PATH,
     *,
@@ -251,6 +288,7 @@ def build_dashboard_snapshot(
     agreement = len(set(v7) & set(v8)) if signal else None
     positions = ((latest_snapshot or {}).get("payload") or {}).get("positions") or {}
     target_weights = dict(payload.get("portfolio_target_weights") or payload.get("v12_target_weights") or {})
+    latest_trades = _latest_rebalance(events, signal)
     holdings = [
         {
             "ticker": ticker,
@@ -308,6 +346,10 @@ def build_dashboard_snapshot(
         "v8_selected": v8,
         "agreement_count": agreement,
         "target_weights": target_weights,
+        "latest_trades": latest_trades,
+        "latest_buy_value": sum(row["trade_value"] for row in latest_trades if row["action"] == "BUY"),
+        "latest_sell_value": sum(row["trade_value"] for row in latest_trades if row["action"] == "SELL"),
+        "latest_trade_fees": sum(row["fee"] for row in latest_trades),
         "execution_status": execution_status,
         "execution_date": execution_date,
         "rolling_sharpe": rolling_sharpe,
