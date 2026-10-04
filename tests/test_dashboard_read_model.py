@@ -110,6 +110,78 @@ class DashboardReadModelTests(unittest.TestCase):
             self.assertAlmostEqual(state["latest_buy_value"], 1_000.0)
             self.assertAlmostEqual(state["latest_sell_value"], 0.0)
             self.assertAlmostEqual(state["latest_trade_fees"], 1.0)
+            self.assertAlmostEqual(state["latest_transaction_costs"], 1.0)
+            self.assertAlmostEqual(state["latest_turnover"], 1_000.0 / 10_500.0)
+            self.assertEqual(state["latest_trades"][0]["before_shares"], 0.0)
+            self.assertEqual(state["latest_trades"][0]["after_shares"], 10.0)
+            self.assertEqual(state["latest_trades"][0]["reason"], "New position — 50% target")
+            self.assertEqual(state["next_signal_date"], "2026-09-30")
+            self.assertEqual(state["next_execution_date"], "2026-10-01")
+
+    def test_latest_rebalance_explains_exit_and_realized_pnl(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "ledger.sqlite3"
+            ledger = AppendOnlyLedger(path)
+            fill = LedgerEvent(**{
+                **_event(
+                    "V12_T1", "FILL", sequence_key="fill-exit", ticker="AAPL",
+                    payload={
+                        "execution_date": "2026-09-01",
+                        "signal_date": "2026-08-31",
+                        "sequence": 1,
+                        "slippage_cost": 0.5,
+                    },
+                ).__dict__,
+                "action": "SELL",
+                "fill_price": 100.0,
+                "quantity": 10.0,
+                "cost": 1.0,
+            })
+            ledger.append_batch([
+                _event(
+                    "V12_T1", "INITIALIZE", payload={"initial_capital": 1_000.0},
+                    sequence_key="init-exit",
+                ),
+                _event(
+                    "V12_T1", "VALUATION_SNAPSHOT", sequence_key="prior",
+                    payload={
+                        "valuation_date": "2026-08-31",
+                        "cash": 0.0,
+                        "portfolio_equity": 1_000.0,
+                        "positions": {"AAPL": {"shares": 10.0, "average_cost": 80.0}},
+                    },
+                ),
+                _event(
+                    "V12_T1", "SIGNAL", sequence_key="signal-exit",
+                    payload={
+                        "signal_date": "2026-08-31",
+                        "market_regime": "BULL",
+                        "portfolio_target_weights": {},
+                    },
+                ),
+                _event(
+                    "V12_T1", "ORDER", sequence_key="order-exit", ticker="AAPL",
+                    payload={"execution_date": "2026-09-01", "signal_date": "2026-08-31"},
+                ),
+                fill,
+                _event(
+                    "V12_T1", "PORTFOLIO_SNAPSHOT", sequence_key="after",
+                    payload={
+                        "execution_date": "2026-09-01",
+                        "cash": 999.0,
+                        "portfolio_equity": 999.0,
+                        "positions": {},
+                    },
+                ),
+            ])
+
+            state = build_dashboard_snapshot(path, today=date(2026, 9, 1))
+            trade = state["latest_trades"][0]
+            self.assertEqual(trade["before_shares"], 10.0)
+            self.assertEqual(trade["after_shares"], 0.0)
+            self.assertEqual(trade["reason"], "Exited — no longer selected")
+            self.assertAlmostEqual(trade["realized_pnl"], 199.0)
+            self.assertAlmostEqual(state["latest_transaction_costs"], 1.5)
 
     def test_overdue_signal_is_operational_error(self):
         with tempfile.TemporaryDirectory() as temp:

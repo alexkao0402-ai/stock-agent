@@ -16,6 +16,8 @@ from typing import Any
 
 import pandas as pd
 
+from src.trading_calendar import last_session_of_month, next_session
+
 
 DEFAULT_LEDGER_PATH = Path("paper_ledger") / "v12_events.sqlite3"
 FROZEN_VERSION = "V12-FROZEN-2026-08-28"
@@ -226,7 +228,7 @@ def _latest_rebalance(events: list[dict[str, Any]], signal: dict[str, Any] | Non
         or signal_payload.get("v12_target_weights")
         or {}
     )
-    rows = []
+    matching_fills = []
     for event in _portfolio_events(events, "V12_T1", "FILL"):
         payload = event.get("payload") or {}
         event_signal_date = str(
@@ -234,23 +236,80 @@ def _latest_rebalance(events: list[dict[str, Any]], signal: dict[str, Any] | Non
         )
         if event_signal_date != signal_date:
             continue
+        matching_fills.append(event)
+    matching_fills.sort(key=lambda row: int((row.get("payload") or {}).get("sequence") or 0))
+    if not matching_fills:
+        return []
+
+    first_fill_sequence = min(int(row.get("sequence") or 0) for row in matching_fills)
+    prior_snapshots = [
+        row for row in _snapshots(events, "V12_T1")
+        if int(row.get("sequence") or 0) < first_fill_sequence
+    ]
+    prior_positions = ((prior_snapshots[-1] if prior_snapshots else {}).get("payload") or {}).get("positions") or {}
+    running_shares = {
+        str(ticker): float(values.get("shares") or 0.0)
+        for ticker, values in prior_positions.items()
+    }
+
+    rows = []
+    for event in matching_fills:
+        payload = event.get("payload") or {}
         action = str(event.get("action") or "").upper()
         ticker = str(event.get("ticker") or "")
         quantity = abs(float(event.get("quantity") or 0.0))
         fill_price = float(event.get("fill_price") or 0.0)
+        fee = float(event.get("cost") or 0.0)
+        before_shares = float(running_shares.get(ticker, 0.0))
+        after_shares = before_shares + quantity if action == "BUY" else max(before_shares - quantity, 0.0)
+        running_shares[ticker] = after_shares
+        target_weight = target_weights.get(ticker)
+        is_trim = action == "SELL" and float(target_weight or 0.0) > 0.0
+        average_cost = float((prior_positions.get(ticker) or {}).get("average_cost") or 0.0)
+        realized_pnl = None
+        if action == "SELL" and average_cost > 0.0:
+            realized_pnl = quantity * fill_price - fee - quantity * average_cost
+        if action == "SELL" and is_trim:
+            reason = f"Trimmed to {float(target_weight):.0%} target"
+        elif action == "SELL":
+            reason = "Exited — no longer selected"
+        elif before_shares <= 1e-9:
+            reason = f"New position — {float(target_weight or 0.0):.0%} target"
+        else:
+            reason = f"Topped up to {float(target_weight or 0.0):.0%} target"
         rows.append({
             "sequence": int(payload.get("sequence") or 0),
             "execution_date": payload.get("execution_date"),
             "action": action,
             "ticker": ticker,
             "shares": quantity,
+            "before_shares": before_shares,
+            "after_shares": after_shares,
             "fill_price": fill_price,
             "trade_value": quantity * fill_price,
-            "fee": float(event.get("cost") or 0.0),
-            "is_trim": action == "SELL" and float(target_weights.get(ticker, 0.0)) > 0.0,
-            "target_weight": target_weights.get(ticker),
+            "fee": fee,
+            "slippage_cost": float(payload.get("slippage_cost") or 0.0),
+            "realized_pnl": realized_pnl,
+            "is_trim": is_trim,
+            "target_weight": target_weight,
+            "reason": reason,
         })
     return sorted(rows, key=lambda row: row["sequence"])
+
+
+def _next_rebalance_dates(signal_date: str | None) -> tuple[str | None, str | None]:
+    if not signal_date:
+        return None, None
+    try:
+        current = date.fromisoformat(str(signal_date))
+    except ValueError:
+        return None, None
+    if current.month == 12:
+        year, month = current.year + 1, 1
+    else:
+        year, month = current.year, current.month + 1
+    next_signal = last_session_of_month(year, month)
+    return next_signal.isoformat(), next_session(next_signal).isoformat()
 
 
 def build_dashboard_snapshot(
@@ -289,6 +348,22 @@ def build_dashboard_snapshot(
     positions = ((latest_snapshot or {}).get("payload") or {}).get("positions") or {}
     target_weights = dict(payload.get("portfolio_target_weights") or payload.get("v12_target_weights") or {})
     latest_trades = _latest_rebalance(events, signal)
+    latest_buy_value = sum(row["trade_value"] for row in latest_trades if row["action"] == "BUY")
+    latest_sell_value = sum(row["trade_value"] for row in latest_trades if row["action"] == "SELL")
+    latest_trade_fees = sum(row["fee"] for row in latest_trades)
+    latest_trade_slippage = sum(row["slippage_cost"] for row in latest_trades)
+    latest_execution_equity = None
+    if latest_trades:
+        latest_execution_date = latest_trades[0].get("execution_date")
+        execution_snapshots = [
+            row for row in _portfolio_events(events, "V12_T1", "PORTFOLIO_SNAPSHOT")
+            if str((row.get("payload") or {}).get("execution_date") or "") == str(latest_execution_date or "")
+        ]
+        latest_execution_equity = _equity_value(execution_snapshots[-1]) if execution_snapshots else None
+    latest_turnover = None
+    if latest_execution_equity and latest_execution_equity > 0.0:
+        latest_turnover = max(latest_buy_value, latest_sell_value) / latest_execution_equity
+    next_signal_date, next_execution_date = _next_rebalance_dates(payload.get("signal_date"))
     holdings = [
         {
             "ticker": ticker,
@@ -347,9 +422,15 @@ def build_dashboard_snapshot(
         "agreement_count": agreement,
         "target_weights": target_weights,
         "latest_trades": latest_trades,
-        "latest_buy_value": sum(row["trade_value"] for row in latest_trades if row["action"] == "BUY"),
-        "latest_sell_value": sum(row["trade_value"] for row in latest_trades if row["action"] == "SELL"),
-        "latest_trade_fees": sum(row["fee"] for row in latest_trades),
+        "latest_buy_value": latest_buy_value,
+        "latest_sell_value": latest_sell_value,
+        "latest_trade_fees": latest_trade_fees,
+        "latest_trade_slippage": latest_trade_slippage,
+        "latest_transaction_costs": latest_trade_fees + latest_trade_slippage,
+        "latest_turnover": latest_turnover,
+        "latest_rebalance_equity": latest_execution_equity,
+        "next_signal_date": next_signal_date,
+        "next_execution_date": next_execution_date,
         "execution_status": execution_status,
         "execution_date": execution_date,
         "rolling_sharpe": rolling_sharpe,

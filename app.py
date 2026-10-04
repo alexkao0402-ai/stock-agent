@@ -121,6 +121,13 @@ def _money(value: float | None) -> str:
     return "—" if value is None else f"${value:,.2f}"
 
 
+def _signed_money(value: float | None) -> str:
+    if value is None:
+        return "—"
+    sign = "+" if value >= 0 else "−"
+    return f"{sign}${abs(value):,.2f}"
+
+
 def _pct(value: float | None, *, points: bool = False) -> str:
     if value is None:
         return "—"
@@ -312,25 +319,73 @@ def render_overview() -> None:
     if latest_trades:
         execution_date = latest_trades[0].get("execution_date") or state.get("execution_date") or "—"
         st.caption(f"Executed {execution_date} · T+1 market open")
-        trade_metrics = st.columns(3)
+        exited = [row["ticker"] for row in latest_trades if row["action"] == "SELL" and not row.get("is_trim")]
+        trimmed = [
+            f'{row["ticker"]} to {float(row.get("target_weight") or 0.0):.0%}'
+            for row in latest_trades if row.get("is_trim")
+        ]
+        opened = [
+            f'{row["ticker"]} at {float(row.get("target_weight") or 0.0):.0%}'
+            for row in latest_trades if row["action"] == "BUY" and float(row.get("before_shares") or 0.0) <= 1e-9
+        ]
+        topped_up = [
+            f'{row["ticker"]} toward {float(row.get("target_weight") or 0.0):.0%}'
+            for row in latest_trades if row["action"] == "BUY" and float(row.get("before_shares") or 0.0) > 1e-9
+        ]
+        changes = []
+        if exited:
+            changes.append(f'exited {", ".join(exited)}')
+        if trimmed:
+            changes.append(f'trimmed {", ".join(trimmed)}')
+        if opened:
+            changes.append(f'opened {", ".join(opened)}')
+        if topped_up:
+            changes.append(f'topped up {", ".join(topped_up)}')
+        if changes:
+            st.info("V12 " + "; ".join(changes) + ".")
+
+        trade_metrics = st.columns(4)
         trade_metrics[0].metric("Bought", _money(state.get("latest_buy_value")))
         trade_metrics[1].metric("Sold", _money(state.get("latest_sell_value")))
-        trade_metrics[2].metric("Fees", _money(state.get("latest_trade_fees")))
+        costs = state.get("latest_transaction_costs")
+        if costs is None:
+            costs = state.get("latest_trade_fees")
+        trade_metrics[2].metric("Trading Costs", _money(costs))
+        turnover = state.get("latest_turnover")
+        trade_metrics[3].metric("Turnover", "—" if turnover is None else f"{float(turnover):.1%}")
         rows = []
         for trade in latest_trades:
             side = trade["action"]
             if trade.get("is_trim"):
                 side = "SELL · TRIM"
             rows.append({
-                "Side": side,
+                "Action": side,
+                "Ticker": trade["ticker"],
+                "Before": f'{float(trade.get("before_shares") or 0.0):,.4f}',
+                "Change": f'{float(trade["shares"]) if trade["action"] == "BUY" else -float(trade["shares"]):+,.4f}',
+                "After": f'{float(trade.get("after_shares") or 0.0):,.4f}',
+                "Target": "—" if trade.get("target_weight") is None else f'{float(trade["target_weight"]):.0%}',
+                "Trade Value": _money(trade["trade_value"]),
+                "Realized P/L": _signed_money(trade.get("realized_pnl")),
+                "Reason": trade.get("reason") or "Monthly rebalance",
+            })
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        next_signal = state.get("next_signal_date")
+        next_execution = state.get("next_execution_date")
+        if next_signal and next_execution:
+            st.caption(f"Next expected cycle · Signal after {next_signal} close → simulated execution at {next_execution} open")
+        st.caption("Realized P/L is shown only for sales and includes commission. Turnover measures the larger of purchases or sales relative to execution-day portfolio value.")
+        with st.expander("Execution audit details"):
+            audit_rows = [{
+                "Side": "SELL · TRIM" if trade.get("is_trim") else trade["action"],
                 "Ticker": trade["ticker"],
                 "Shares": f'{trade["shares"]:,.4f}',
                 "Fill Price": _money(trade["fill_price"]),
                 "Trade Value": _money(trade["trade_value"]),
-                "Fee": _money(trade["fee"]),
-            })
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
-        if any(trade.get("is_trim") for trade in latest_trades):
+                "Commission": _money(trade["fee"]),
+                "Slippage": _money(trade.get("slippage_cost")),
+            } for trade in latest_trades]
+            st.dataframe(pd.DataFrame(audit_rows), width="stretch", hide_index=True)
             st.caption("SELL · TRIM means the stock remained selected and only the excess above its target weight was sold.")
     elif state["latest_signal"] is not None and state["execution_status"] != "Executed":
         st.info("The latest signal is waiting for execution. Trade details will appear here after the T+1 open.")
@@ -442,21 +497,51 @@ def render_market() -> None:
 
 
 def render_strategy_health() -> None:
-    _header("Strategy Health", "Strategy Health", "Confirm operational safety first, then review the strategy's Forward evidence separately.")
+    _header(
+        "Strategy Health",
+        "Strategy & System Health",
+        "Understand whether automation is safe, what V12 is doing now, and whether Forward results are becoming unusual.",
+    )
     _paper_banner()
     state = _dashboard_state()
 
-    st.markdown("### System Health")
-    st.caption("Checks data, Ledger integrity, synchronization, and execution. Operational failures can block trading.")
-    _status_badge(state["health_status"], state["health_label"])
+    st.markdown("### What can you learn here?")
+    summary = st.columns(3)
+    with summary[0]:
+        with st.container(border=True):
+            st.markdown("#### Can the system continue?")
+            st.metric("Operational status", "BLOCKED" if state["trading_blocked"] else "READY")
+            st.caption("A blocked status means the ledger, data, synchronization, or T+1 execution needs attention before another trade.")
+    with summary[1]:
+        with st.container(border=True):
+            st.markdown("#### What is V12 doing?")
+            posture = "INVESTED" if state.get("market_regime") == "BULL" and state.get("target_weights") else "CASH / WAITING"
+            st.metric("Current posture", posture)
+            st.caption("SPY regime controls whether Frozen V12 may hold stocks. It does not predict tomorrow's market direction.")
+    with summary[2]:
+        with st.container(border=True):
+            st.markdown("#### Can performance be judged?")
+            maturity = "BUILDING SAMPLE" if state.get("rolling_sharpe") is None else state["health_label"].upper()
+            st.metric("Forward evidence", maturity)
+            st.caption("Until enough official daily observations exist, weak or strong short-term returns are not reliable evidence.")
+
+    st.markdown("### Current interpretation")
     if state["trading_blocked"]:
         st.error("Trading is blocked by the system: " + (state["integrity_error"] or state["execution_status"]))
-    elif state["warnings"]:
-        for warning in state["warnings"]:
-            st.warning(warning)
     else:
-        st.success("Data integrity and execution status are normal. Frozen V12 remains unchanged.")
+        allocation = " · ".join(
+            f"{ticker} {float(weight):.0%}"
+            for ticker, weight in (state.get("target_weights") or {}).items()
+        ) or "Cash / no allocation"
+        st.success(
+            f"No operational action is required. Latest signal: {state.get('signal_date') or '—'}; "
+            f"execution: {state.get('execution_status') or '—'}; allocation: {allocation}."
+        )
+    for warning in state.get("warnings") or []:
+        st.warning(f"Research watch only — {warning}. This does not change or stop Frozen V12.")
 
+    st.markdown("### System safety checks")
+    st.caption("These checks answer whether the displayed records and the next automated cycle can be trusted.")
     operational_metrics = st.columns(4)
     operational_metrics[0].metric("V12 Status", "FROZEN")
     operational_metrics[1].metric(
@@ -466,14 +551,13 @@ def render_strategy_health() -> None:
     operational_metrics[2].metric("T+1 Execution", state["execution_status"])
     operational_metrics[3].metric("Data As Of", state["last_data_asof"] or "—")
 
-    with st.container(border=True):
-        st.markdown("#### 🔴 System Errors That Can Block Trading")
-        st.write("- Ledger hash, schema, or JSON verification failure")
-        st.write("- A signal exists without orders, or T+1 execution is overdue")
-        st.write("- Incomplete data, timestamp errors, or accounting reconciliation failure")
+    with st.expander("What would block trading?"):
+        st.write("- Ledger hash, schema, or signed snapshot verification failure")
+        st.write("- A signal exists without orders, or its T+1 execution is overdue")
+        st.write("- Incomplete prices, timestamp errors, or failed accounting reconciliation")
 
-    st.markdown("### Strategy Evidence")
-    st.caption("Performance uses only the official Forward Ledger. Historical backtests are excluded from the equity curve and cumulative return.")
+    st.markdown("### Strategy evidence")
+    st.caption("This section asks whether live paper results still resemble the behavior expected from the frozen research. It never changes the strategy automatically.")
     evidence = st.columns(4)
     evidence[0].metric("SPY Regime", state["market_regime"] or "—")
     agreement = "—" if state["agreement_count"] is None else f"{state['agreement_count']} overlapping"
@@ -482,26 +566,24 @@ def render_strategy_health() -> None:
     evidence[3].metric("Official Allocation Batches", str(state["formal_forward_rows"]))
 
     second = st.columns(4)
-    second[0].metric("12M Rolling Sharpe", "—" if state["rolling_sharpe"] is None else f"{state['rolling_sharpe']:.2f}")
-    second[1].metric("Forward vs Backtest", "—" if state["sharpe_deviation"] is None else f"{state['sharpe_deviation']:+.2f} Sharpe")
-    second[2].metric("T+1", _pct(state["t1_return"]))
+    second[0].metric("12M Rolling Sharpe", "Waiting" if state["rolling_sharpe"] is None else f"{state['rolling_sharpe']:.2f}")
+    second[1].metric("Forward vs Backtest", "Waiting" if state["sharpe_deviation"] is None else f"{state['sharpe_deviation']:+.2f} Sharpe")
+    second[2].metric("T+1 Return", _pct(state["t1_return"]))
     second[3].metric("T+2 / Difference", "—" if state["t2_return"] is None else f"{_pct(state['t2_return'])} / {_pct(state['t1_t2_spread'], points=True)}")
 
-    evidence_rules, historical_reference = st.columns(2)
-    with evidence_rules:
-        with st.container(border=True):
-            st.markdown("#### 🟡 Forward Performance Watch")
-            st.write("- Fewer than 252 daily return observations: insufficient sample")
-            st.write("- Rolling Sharpe < 0: enter Watch status")
-            st.write("- Forward drawdown ≤ −20%: start a research review")
-            st.caption("These conditions only warn. They do not modify or stop Frozen V12.")
-    with historical_reference:
-        with st.container(border=True):
-            st.markdown("#### Historical Reference · Not Forward")
-            st.metric("Frozen V12 Historical Sharpe", f"{HISTORICAL_SHARPE:.2f}")
-            st.caption("This is a pre-freeze research reference only. It is never included in official Forward returns or curves.")
-    st.info("Weak short-term performance can only trigger a warning. The Dashboard cannot change lookbacks, weights, the universe, execution timing, or any Frozen V12 rule.")
-    st.markdown('<div class="read-only">Data flow: Frozen V12 → Forward Engine → SQLite / Evidence → Read-only UI → Streamlit.</div>', unsafe_allow_html=True)
+    with st.expander("How to read these strategy metrics", expanded=True):
+        st.markdown(
+            """
+            - **SPY Regime:** `BULL` permits stock exposure; an unfavorable regime moves V12 to cash according to the frozen rule.
+            - **V7 / V8 agreement:** shows whether the two frozen ranking components selected the same stocks. Agreement explains the final weights; it is not a probability of profit.
+            - **Forward Drawdown:** the decline from the highest official paper value. At **−20%**, research review begins, but the strategy is not automatically altered.
+            - **12M Rolling Sharpe:** return earned per unit of volatility over 252 official daily observations. `Waiting` means the sample is still too small—not that the strategy failed.
+            - **Forward vs Backtest:** compares Forward Sharpe with the frozen historical reference only after enough Forward data exists.
+            - **T+1 vs T+2:** shows how sensitive results are to executing one day later. A large persistent gap may reveal execution fragility.
+            """
+        )
+    st.caption(f"Historical reference only · Frozen V12 Sharpe {HISTORICAL_SHARPE:.2f}. Backtest results are never mixed into official Forward returns.")
+    st.info("Use this page to detect operational failures or persistent strategy deterioration—not to create discretionary buy/sell signals. Weak short-term performance can warn you, but it cannot modify Frozen V12.")
 
 
 def main() -> None:

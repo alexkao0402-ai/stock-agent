@@ -63,12 +63,23 @@ def _state():
             "fill_price": 100.0,
             "trade_value": 1000.0,
             "fee": 1.0,
+            "slippage_cost": 0.5,
+            "before_shares": 0.0,
+            "after_shares": 10.0,
+            "realized_pnl": None,
             "is_trim": False,
             "target_weight": 1.0,
+            "reason": "New position — 100% target",
         }],
         "latest_buy_value": 1000.0,
         "latest_sell_value": 0.0,
         "latest_trade_fees": 1.0,
+        "latest_trade_slippage": 0.5,
+        "latest_transaction_costs": 1.5,
+        "latest_turnover": 0.1,
+        "latest_rebalance_equity": 10000.0,
+        "next_signal_date": "2026-09-30",
+        "next_execution_date": "2026-10-01",
         "rolling_sharpe": None,
         "sharpe_deviation": None,
         "t1_return": 0.0,
@@ -99,6 +110,8 @@ class DashboardCloudSnapshotTests(unittest.TestCase):
         self.assertEqual(recovered["latest_buy_value"], 1000.0)
         self.assertEqual(recovered["latest_sell_value"], 0.0)
         self.assertEqual(recovered["latest_trade_fees"], 1.0)
+        self.assertEqual(recovered["latest_transaction_costs"], 1.5)
+        self.assertEqual(recovered["next_execution_date"], "2026-10-01")
 
     def test_tampering_and_wrong_secret_fail_closed(self):
         envelope = create_signed_snapshot(_state(), SECRET)
