@@ -221,6 +221,17 @@ def render_overview() -> None:
     latest_valuation = latest_curve_date(state)
     if state["integrity_error"]:
         st.error(f"Dashboard sync error: {state['integrity_error']}")
+    st.caption(
+        f"Prices as of {latest_valuation or 'Unavailable'} · "
+        f"Last verified publication: {state.get('snapshot_generated_at') or state.get('last_event_created_at') or 'Unavailable'}"
+    )
+    if state.get("trading_blocked"):
+        st.error("Action required: dashboard data or execution needs attention. Open Strategy Health for details.")
+    else:
+        st.caption("Automation is operating normally. " + (
+            "Forward history is still too short to judge long-term performance."
+            if state.get("rolling_sharpe") is None else "Open Strategy Health to review performance monitoring."
+        ))
     columns = st.columns(5)
     columns[0].metric("Portfolio Value", _money(state["portfolio_value"]))
     columns[1].metric("Cumulative Return", _pct(state["cumulative_return"]))
@@ -314,6 +325,9 @@ def render_overview() -> None:
         for position in state["holdings"]:
             holding_rows.append({
                 "Ticker": position["ticker"],
+                "Shares": position.get("shares"),
+                "Average Cost": position.get("average_cost"),
+                "Latest Price": position.get("mark"),
                 "Current Weight": position.get("current_weight"),
                 "Target Weight": position.get("target_weight"),
                 "Market Value": position.get("market_value"),
@@ -324,6 +338,9 @@ def render_overview() -> None:
             width="stretch",
             hide_index=True,
             column_config={
+                "Shares": st.column_config.NumberColumn("Shares", format="%.4f"),
+                "Average Cost": st.column_config.NumberColumn("Average Cost", format="$%.2f"),
+                "Latest Price": st.column_config.NumberColumn("Latest Price", format="$%.2f"),
                 "Current Weight": st.column_config.ProgressColumn(
                     "Current Weight", min_value=0.0, max_value=1.0, format="percent"
                 ),
