@@ -40,6 +40,11 @@ DISPLAY_STATE_FIELDS = (
     "max_drawdown",
     "cash",
     "holdings",
+    "selection_explanations",
+    "realized_pnl",
+    "unrealized_pnl",
+    "cumulative_transaction_costs",
+    "latest_valuation_date",
     "signal_date",
     "market_regime",
     "v7_selected",
@@ -69,6 +74,9 @@ DISPLAY_STATE_FIELDS = (
     "integrity_error",
     "warnings",
     "last_data_asof",
+    "last_event_created_at",
+    "ledger_event_count",
+    "ledger_verified",
 )
 
 
@@ -194,6 +202,8 @@ def verify_signed_snapshot(envelope: dict[str, Any], secret: str) -> dict[str, A
         list(payload.get("curve") or []), columns=["date", "series", "value"]
     )
     state["events"] = list(payload.get("events") or [])
+    state["snapshot_generated_at"] = body.get("generated_at")
+    state["source_commit"] = body.get("source_commit")
     return state
 
 

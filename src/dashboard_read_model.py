@@ -312,6 +312,40 @@ def _next_rebalance_dates(signal_date: str | None) -> tuple[str | None, str | No
     return next_signal.isoformat(), next_session(next_signal).isoformat()
 
 
+def _selection_explanations(
+    target_weights: dict[str, Any],
+    v7_selected: list[str],
+    v8_selected: list[str],
+) -> list[dict[str, Any]]:
+    """Explain frozen selections using only evidence saved with the signal."""
+    v7 = set(v7_selected)
+    v8 = set(v8_selected)
+    rows: list[dict[str, Any]] = []
+    for ticker, raw_weight in sorted(
+        target_weights.items(), key=lambda item: (-float(item[1]), item[0])
+    ):
+        weight = float(raw_weight)
+        if ticker in v7 and ticker in v8:
+            support = "V7 + V8"
+            reason = "Selected by both frozen momentum components; consensus receives the larger allocation."
+        elif ticker in v7:
+            support = "V7"
+            reason = "Selected by the frozen 12–1 momentum component."
+        elif ticker in v8:
+            support = "V8"
+            reason = "Selected by the frozen 3–1 / 6–1 / 12–1 composite momentum component."
+        else:
+            support = "Portfolio rule"
+            reason = "Included by the saved Frozen V12 target portfolio."
+        rows.append({
+            "ticker": ticker,
+            "target_weight": weight,
+            "support": support,
+            "reason": reason,
+        })
+    return rows
+
+
 def build_dashboard_snapshot(
     path: str | Path = DEFAULT_LEDGER_PATH,
     *,
@@ -364,21 +398,55 @@ def build_dashboard_snapshot(
     if latest_execution_equity and latest_execution_equity > 0.0:
         latest_turnover = max(latest_buy_value, latest_sell_value) / latest_execution_equity
     next_signal_date, next_execution_date = _next_rebalance_dates(payload.get("signal_date"))
-    holdings = [
-        {
+    holdings = []
+    for ticker, values in sorted(positions.items()):
+        shares = float(values.get("shares", 0.0))
+        average_cost = float(values.get("average_cost", 0.0))
+        mark_value = values.get("mark")
+        mark = None if mark_value is None else float(mark_value)
+        market_value = None if mark is None else shares * mark
+        unrealized_pnl = (
+            None if mark is None else shares * (mark - average_cost)
+        )
+        current_weight = (
+            None
+            if market_value is None or not portfolio_value
+            else market_value / portfolio_value
+        )
+        holdings.append({
             "ticker": ticker,
-            "shares": float(values.get("shares", 0.0)),
-            "average_cost": float(values.get("average_cost", 0.0)),
+            "shares": shares,
+            "average_cost": average_cost,
+            "mark": mark,
+            "market_value": market_value,
+            "unrealized_pnl": unrealized_pnl,
+            "current_weight": current_weight,
             "target_weight": target_weights.get(ticker),
-        }
-        for ticker, values in sorted(positions.items())
-    ]
+        })
     cash = None
     if latest_snapshot:
         try:
             cash = float(latest_snapshot["payload"]["cash"])
         except (KeyError, TypeError, ValueError):
             cash = None
+    latest_payload = (latest_snapshot or {}).get("payload") or {}
+    try:
+        realized_pnl = float(latest_payload["realized_pnl"])
+    except (KeyError, TypeError, ValueError):
+        realized_pnl = None
+    try:
+        unrealized_pnl = float(latest_payload["unrealized_pnl"])
+    except (KeyError, TypeError, ValueError):
+        unrealized_pnl = None
+    try:
+        cumulative_transaction_costs = float(latest_payload["transaction_costs"])
+    except (KeyError, TypeError, ValueError):
+        cumulative_transaction_costs = None
+    latest_valuation_date = str(
+        latest_payload.get("valuation_date")
+        or latest_payload.get("execution_date")
+        or ""
+    ) or None
 
     statistical_warnings: list[str] = []
     if not events:
@@ -414,6 +482,13 @@ def build_dashboard_snapshot(
         "max_drawdown": drawdown,
         "cash": cash,
         "holdings": holdings,
+        "selection_explanations": _selection_explanations(
+            target_weights, v7, v8
+        ),
+        "realized_pnl": realized_pnl,
+        "unrealized_pnl": unrealized_pnl,
+        "cumulative_transaction_costs": cumulative_transaction_costs,
+        "latest_valuation_date": latest_valuation_date,
         "latest_signal": signal,
         "signal_date": payload.get("signal_date"),
         "market_regime": payload.get("market_regime"),
@@ -444,4 +519,7 @@ def build_dashboard_snapshot(
         "integrity_error": integrity_error,
         "warnings": statistical_warnings,
         "last_data_asof": last_data_asof,
+        "last_event_created_at": str(events[-1]["created_at"]) if events else None,
+        "ledger_event_count": len(events),
+        "ledger_verified": bool(events) and integrity_error is None,
     }
