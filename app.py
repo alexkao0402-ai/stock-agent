@@ -27,6 +27,7 @@ from src.dashboard_read_model import (
     build_dashboard_snapshot,
 )
 from src.dashboard_ui import (
+    activity_event_rows,
     header as _header,
     inject_style as _inject_style,
     latest_curve_date,
@@ -39,6 +40,7 @@ from src.dashboard_ui import (
     signed_money as _signed_money,
     status_badge as _status_badge,
     timeline,
+    trade_activity_rows,
 )
 from src.stock_data import (
     clean_stock_data,
@@ -51,7 +53,7 @@ from src.stock_data import (
 
 
 APP_TITLE = "V12 Forward Dashboard"
-COLORS = {"V12": "#39E5A5", "SPY": "#35C9FF", "QQQ": "#8A7CFF"}
+COLORS = {"V12": "#39D98A", "SPY": "#D4D4D8", "QQQ": "#818CF8"}
 
 
 st.set_page_config(
@@ -166,6 +168,52 @@ def _market_payload(symbol: str) -> dict[str, Any]:
     }
 
 
+def _chart_layout(*, height: int) -> dict[str, Any]:
+    return {
+        "height": height,
+        "margin": {"l": 8, "r": 8, "t": 12, "b": 8},
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "#0d0d10",
+        "font": {"color": "#a1a1aa", "family": "Inter, Segoe UI, sans-serif"},
+        "hovermode": "x unified",
+        "hoverlabel": {"bgcolor": "#16161a", "bordercolor": "#27272a"},
+        "xaxis": {"gridcolor": "rgba(255,255,255,.055)", "zeroline": False},
+        "yaxis": {
+            "gridcolor": "rgba(255,255,255,.055)",
+            "zeroline": False,
+        },
+        "legend": {"orientation": "h", "y": 1.08},
+    }
+
+
+def _rebalance_change_summary(trades: list[dict[str, Any]]) -> str:
+    exited = [row["ticker"] for row in trades if row["action"] == "SELL" and not row.get("is_trim")]
+    trimmed = [
+        f'{row["ticker"]} to {float(row.get("target_weight") or 0.0):.0%}'
+        for row in trades if row.get("is_trim")
+    ]
+    opened = [
+        f'{row["ticker"]} at {float(row.get("target_weight") or 0.0):.0%}'
+        for row in trades
+        if row["action"] == "BUY" and float(row.get("before_shares") or 0.0) <= 1e-9
+    ]
+    topped_up = [
+        f'{row["ticker"]} toward {float(row.get("target_weight") or 0.0):.0%}'
+        for row in trades
+        if row["action"] == "BUY" and float(row.get("before_shares") or 0.0) > 1e-9
+    ]
+    changes = []
+    if exited:
+        changes.append(f'exited {", ".join(exited)}')
+    if trimmed:
+        changes.append(f'trimmed {", ".join(trimmed)}')
+    if opened:
+        changes.append(f'opened {", ".join(opened)}')
+    if topped_up:
+        changes.append(f'topped up {", ".join(topped_up)}')
+    return "V12 " + "; ".join(changes) + "." if changes else "No allocation changes were required."
+
+
 def render_overview() -> None:
     _header("Portfolio", "Overview / Paper Trading", "Current paper portfolio, performance, and latest monthly rebalance.")
     _paper_banner()
@@ -191,17 +239,13 @@ def render_overview() -> None:
             if frame.empty:
                 continue
             figure.add_trace(go.Scatter(
-                x=pd.to_datetime(frame["date"]), y=frame["value"], name=name, mode="lines+markers",
+                x=pd.to_datetime(frame["date"]), y=frame["value"], name=name, mode="lines",
                 line={"color": COLORS[name], "width": 3 if name == "V12" else 2},
                 hovertemplate=f"<b>{name}</b><br>%{{x|%Y-%m-%d}}<br>$%{{y:,.2f}}<extra></extra>",
             ))
-        figure.update_layout(
-            height=430, margin={"l": 8, "r": 8, "t": 12, "b": 8},
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(12,18,30,.68)",
-            font={"color": "#dfe7f2"}, hovermode="x unified",
-            xaxis={"gridcolor": "#202b3d"}, yaxis={"tickprefix": "$", "tickformat": ",.0f", "gridcolor": "#202b3d"},
-            legend={"orientation": "h", "y": 1.08},
-        )
+        layout = _chart_layout(height=420)
+        layout["yaxis"].update({"tickprefix": "$", "tickformat": ",.0f"})
+        figure.update_layout(**layout)
         st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
 
     if state["holdings"]:
@@ -300,31 +344,7 @@ def render_overview() -> None:
     if latest_trades:
         execution_date = latest_trades[0].get("execution_date") or state.get("execution_date") or "—"
         st.caption(f"Executed {execution_date} · T+1 market open")
-        exited = [row["ticker"] for row in latest_trades if row["action"] == "SELL" and not row.get("is_trim")]
-        trimmed = [
-            f'{row["ticker"]} to {float(row.get("target_weight") or 0.0):.0%}'
-            for row in latest_trades if row.get("is_trim")
-        ]
-        opened = [
-            f'{row["ticker"]} at {float(row.get("target_weight") or 0.0):.0%}'
-            for row in latest_trades if row["action"] == "BUY" and float(row.get("before_shares") or 0.0) <= 1e-9
-        ]
-        topped_up = [
-            f'{row["ticker"]} toward {float(row.get("target_weight") or 0.0):.0%}'
-            for row in latest_trades if row["action"] == "BUY" and float(row.get("before_shares") or 0.0) > 1e-9
-        ]
-        changes = []
-        if exited:
-            changes.append(f'exited {", ".join(exited)}')
-        if trimmed:
-            changes.append(f'trimmed {", ".join(trimmed)}')
-        if opened:
-            changes.append(f'opened {", ".join(opened)}')
-        if topped_up:
-            changes.append(f'topped up {", ".join(topped_up)}')
-        if changes:
-            st.info("V12 " + "; ".join(changes) + ".")
-
+        st.info(_rebalance_change_summary(latest_trades))
         trade_metrics = st.columns(4)
         trade_metrics[0].metric("Bought", _money(state.get("latest_buy_value")))
         trade_metrics[1].metric("Sold", _money(state.get("latest_sell_value")))
@@ -334,40 +354,11 @@ def render_overview() -> None:
         trade_metrics[2].metric("Trading Costs", _money(costs))
         turnover = state.get("latest_turnover")
         trade_metrics[3].metric("Portfolio Changed", "—" if turnover is None else f"{float(turnover):.1%}")
-        rows = []
-        for trade in latest_trades:
-            side = trade["action"]
-            if trade.get("is_trim"):
-                side = "SELL · TRIM"
-            rows.append({
-                "Action": side,
-                "Ticker": trade["ticker"],
-                "Trade Value": _money(trade["trade_value"]),
-                "Realized P/L": _signed_money(trade.get("realized_pnl")),
-                "Target": "—" if trade.get("target_weight") is None else f'{float(trade["target_weight"]):.0%}',
-                "Reason": trade.get("reason") or "Monthly rebalance",
-            })
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        st.caption("Open Activity for share quantities, fill prices, costs, realized P/L, and immutable event history.")
         next_signal = state.get("next_signal_date")
         next_execution = state.get("next_execution_date")
         if next_signal and next_execution:
             st.caption(f"Next expected cycle · Signal after {next_signal} close → simulated execution at {next_execution} open")
-        st.caption("Realized P/L is shown only for sales and includes commission. Portfolio Changed shows the larger of purchases or sales as a percentage of execution-day portfolio value.")
-        with st.expander("Execution audit details"):
-            audit_rows = [{
-                "Side": "SELL · TRIM" if trade.get("is_trim") else trade["action"],
-                "Ticker": trade["ticker"],
-                "Before": f'{float(trade.get("before_shares") or 0.0):,.4f}',
-                "Change": f'{float(trade["shares"]) if trade["action"] == "BUY" else -float(trade["shares"]):+,.4f}',
-                "After": f'{float(trade.get("after_shares") or 0.0):,.4f}',
-                "Shares": f'{trade["shares"]:,.4f}',
-                "Fill Price": _money(trade["fill_price"]),
-                "Trade Value": _money(trade["trade_value"]),
-                "Commission": _money(trade["fee"]),
-                "Slippage": _money(trade.get("slippage_cost")),
-            } for trade in latest_trades]
-            st.dataframe(pd.DataFrame(audit_rows), width="stretch", hide_index=True)
-            st.caption("SELL · TRIM means the stock remained selected and only the excess above its target weight was sold.")
     elif state["latest_signal"] is not None and state["execution_status"] != "Executed":
         st.info("The latest signal is waiting for execution. Trade details will appear here after the T+1 open.")
     elif state["latest_signal"] is not None:
@@ -385,6 +376,121 @@ def render_overview() -> None:
         ("Latest valuation", latest_valuation or "Waiting"),
         ("Next cycle", f"{next_signal} close → {next_execution} open"),
     ])
+
+
+def render_activity() -> None:
+    _header(
+        "Execution",
+        "Trading Activity",
+        "Actual paper orders, fills, costs, and immutable system events from the signed dashboard snapshot.",
+    )
+    _paper_banner()
+    state = _dashboard_state()
+    if state.get("integrity_error"):
+        st.error(f"Dashboard sync error: {state['integrity_error']}")
+
+    latest_trades = list(state.get("latest_trades") or [])
+    st.markdown("### Latest Rebalance")
+    if not latest_trades:
+        if state.get("latest_signal") is not None and state.get("execution_status") == "Executed":
+            st.markdown(
+                '<div class="empty-state"><h3>No trades were required</h3>'
+                '<p>The portfolio already matched the latest official target weights.</p></div>',
+                unsafe_allow_html=True,
+            )
+        elif state.get("latest_signal") is not None:
+            st.markdown(
+                '<div class="empty-state"><h3>Execution is pending</h3>'
+                '<p>Trade details will appear after the official T+1 market-open cycle.</p></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="empty-state"><h3>No official trading activity yet</h3>'
+                '<p>The first immutable Forward signal and execution have not been generated.</p></div>',
+                unsafe_allow_html=True,
+            )
+    else:
+        execution_date = latest_trades[0].get("execution_date") or state.get("execution_date") or "—"
+        st.caption(f"Executed {execution_date} · T+1 market open · Signed read-only evidence")
+        st.info(_rebalance_change_summary(latest_trades))
+
+        trade_metrics = st.columns(4)
+        trade_metrics[0].metric("Bought", _money(state.get("latest_buy_value")))
+        trade_metrics[1].metric("Sold", _money(state.get("latest_sell_value")))
+        costs = state.get("latest_transaction_costs")
+        if costs is None:
+            costs = state.get("latest_trade_fees")
+        trade_metrics[2].metric("Trading Costs", _money(costs))
+        turnover = state.get("latest_turnover")
+        trade_metrics[3].metric(
+            "Portfolio Changed",
+            "—" if turnover is None else f"{float(turnover):.1%}",
+        )
+
+        filter_columns = st.columns(2)
+        with filter_columns[0]:
+            action_filter = st.selectbox(
+                "Action",
+                ["All actions"] + sorted({str(row.get("action") or "—") for row in latest_trades}),
+            )
+        with filter_columns[1]:
+            ticker_filter = st.selectbox(
+                "Ticker",
+                ["All tickers"] + sorted({str(row.get("ticker") or "—") for row in latest_trades}),
+            )
+        filtered_trades = [
+            row for row in latest_trades
+            if (action_filter == "All actions" or row.get("action") == action_filter)
+            and (ticker_filter == "All tickers" or row.get("ticker") == ticker_filter)
+        ]
+        st.dataframe(
+            pd.DataFrame(trade_activity_rows(filtered_trades)),
+            width="stretch",
+            hide_index=True,
+        )
+        st.caption(
+            "Realized P/L is shown only for sales and includes commission. "
+            "Portfolio Changed is the larger of purchases or sales relative to execution-day value."
+        )
+
+        with st.expander("Execution audit details"):
+            audit_rows = [{
+                "Side": "SELL · TRIM" if trade.get("is_trim") else trade["action"],
+                "Ticker": trade["ticker"],
+                "Before": f'{float(trade.get("before_shares") or 0.0):,.4f}',
+                "Change": f'{float(trade["shares"]) if trade["action"] == "BUY" else -float(trade["shares"]):+,.4f}',
+                "After": f'{float(trade.get("after_shares") or 0.0):,.4f}',
+                "Fill Price": _money(trade["fill_price"]),
+                "Trade Value": _money(trade["trade_value"]),
+                "Commission": _money(trade["fee"]),
+                "Slippage": _money(trade.get("slippage_cost")),
+            } for trade in filtered_trades]
+            st.dataframe(pd.DataFrame(audit_rows), width="stretch", hide_index=True)
+            st.caption(
+                "SELL · TRIM means the stock remained selected and only the amount above its target weight was sold."
+            )
+
+    st.markdown("### Recent System Events")
+    st.markdown(
+        '<div class="section-note">Newest first. This is a display projection of append-only ledger events; the Dashboard cannot edit them.</div>',
+        unsafe_allow_html=True,
+    )
+    event_rows = activity_event_rows(state)
+    if event_rows:
+        event_types = sorted({row["Event"] for row in event_rows})
+        event_filter = st.selectbox(
+            "Event type",
+            ["All events"] + event_types,
+            key="activity_event_filter",
+        )
+        filtered_events = [
+            row for row in event_rows
+            if event_filter == "All events" or row["Event"] == event_filter
+        ]
+        st.dataframe(pd.DataFrame(filtered_events), width="stretch", hide_index=True)
+    else:
+        st.info("No verified ledger events are available in the current snapshot.")
 
 
 def render_market() -> None:
@@ -426,14 +532,12 @@ def render_market() -> None:
 
     figure = go.Figure(go.Scatter(
         x=pd.to_datetime(prices["date"]), y=prices["close"], mode="lines",
-        line={"color": COLORS["V12"], "width": 2.5}, fill="tozeroy", fillcolor="rgba(57,229,165,.06)",
+        line={"color": COLORS["V12"], "width": 2.5}, fill="tozeroy", fillcolor="rgba(57,217,138,.045)",
         hovertemplate="%{x|%Y-%m-%d}<br>$%{y:,.2f}<extra></extra>",
     ))
-    figure.update_layout(
-        height=330, margin={"l": 8, "r": 8, "t": 8, "b": 8}, paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(12,18,30,.68)", font={"color": "#dfe7f2"},
-        xaxis={"gridcolor": "#202b3d"}, yaxis={"tickprefix": "$", "gridcolor": "#202b3d"},
-    )
+    layout = _chart_layout(height=330)
+    layout["yaxis"].update({"tickprefix": "$"})
+    figure.update_layout(**layout)
     st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
 
     st.markdown("### Earnings & Fundamentals")
@@ -507,24 +611,30 @@ def render_strategy_health() -> None:
     state = _dashboard_state()
 
     st.markdown("### What can you learn here?")
-    summary = st.columns(3)
-    with summary[0]:
-        with st.container(border=True):
-            st.markdown("#### Can the system continue?")
-            st.metric("Operational status", "BLOCKED" if state["trading_blocked"] else "READY")
-            st.caption("A blocked status means the ledger, data, synchronization, or T+1 execution needs attention before another trade.")
-    with summary[1]:
-        with st.container(border=True):
-            st.markdown("#### What is V12 doing?")
-            posture = "INVESTED" if state.get("market_regime") == "BULL" and state.get("target_weights") else "CASH / WAITING"
-            st.metric("Current posture", posture)
-            st.caption("SPY regime controls whether Frozen V12 may hold stocks. It does not predict tomorrow's market direction.")
-    with summary[2]:
-        with st.container(border=True):
-            st.markdown("#### Can performance be judged?")
-            maturity = "BUILDING SAMPLE" if state.get("rolling_sharpe") is None else state["health_label"].upper()
-            st.metric("Forward evidence", maturity)
-            st.caption("Until enough official daily observations exist, weak or strong short-term returns are not reliable evidence.")
+    posture = "INVESTED" if state.get("market_regime") == "BULL" and state.get("target_weights") else "CASH / WAITING"
+    maturity = "BUILDING SAMPLE" if state.get("rolling_sharpe") is None else state["health_label"].upper()
+    st.markdown(
+        f'''
+        <div class="health-strip">
+          <section class="health-cell">
+            <div class="health-label">System</div>
+            <div class="health-value">{"BLOCKED" if state["trading_blocked"] else "READY"}</div>
+            <div class="health-copy">Can the next automated cycle safely continue?</div>
+          </section>
+          <section class="health-cell">
+            <div class="health-label">Strategy</div>
+            <div class="health-value">{html.escape(posture)}</div>
+            <div class="health-copy">Is Frozen V12 invested or protected in cash?</div>
+          </section>
+          <section class="health-cell">
+            <div class="health-label">Evidence</div>
+            <div class="health-value">{html.escape(maturity)}</div>
+            <div class="health-copy">Is there enough official Forward history to judge performance?</div>
+          </section>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
 
     st.markdown("### Current interpretation")
     if state["trading_blocked"]:
@@ -606,14 +716,18 @@ def render_strategy_health() -> None:
 def main() -> None:
     _inject_style()
     with st.sidebar:
-        st.markdown("## ◈ V12")
-        st.caption("Forward Research System")
+        st.markdown(
+            '<div class="brand-kicker">FORWARD RESEARCH</div>'
+            '<div class="brand-title">V12 Dashboard</div>'
+            '<div class="brand-meta">Frozen strategy<br>Read-only interface</div>',
+            unsafe_allow_html=True,
+        )
         st.divider()
-        st.caption("Frozen strategy · Read-only dashboard")
     navigation = st.navigation([
-        st.Page(render_overview, title="Overview / Paper Trading", icon="📊", default=True),
-        st.Page(render_market, title="Market Intelligence", icon="📰"),
-        st.Page(render_strategy_health, title="Strategy Health", icon="🛡️"),
+        st.Page(render_overview, title="Overview", default=True),
+        st.Page(render_activity, title="Activity"),
+        st.Page(render_market, title="Market Intelligence"),
+        st.Page(render_strategy_health, title="Strategy Health"),
     ])
     navigation.run()
     st.markdown('<div class="footer-note">For education and research only. Paper trading is not a real execution, and past performance does not predict future results.</div>', unsafe_allow_html=True)
