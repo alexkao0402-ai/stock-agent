@@ -90,7 +90,16 @@ class DashboardReadModelTests(unittest.TestCase):
                     "execution_date": "2026-09-01" if portfolio_id.endswith("T1") else "2026-09-02",
                     "cash": 1_000.0,
                     "portfolio_equity": equity,
-                    "positions": {"NVDA": {"shares": 10.0, "average_cost": 100.0}} if portfolio_id.startswith("V12") else {},
+                    "positions": {
+                        "NVDA": {
+                            "shares": 10.0,
+                            "average_cost": 100.0,
+                            "mark": 105.0,
+                        }
+                    } if portfolio_id.startswith("V12") else {},
+                    "realized_pnl": 25.0 if portfolio_id == "V12_T1" else 0.0,
+                    "unrealized_pnl": 50.0 if portfolio_id == "V12_T1" else 0.0,
+                    "transaction_costs": 3.5 if portfolio_id == "V12_T1" else 0.0,
                 }
                 events.append(_event(portfolio_id, "PORTFOLIO_SNAPSHOT", payload=payload, sequence_key="snapshot"))
             ledger.append_batch(events)
@@ -105,6 +114,18 @@ class DashboardReadModelTests(unittest.TestCase):
             self.assertEqual(state["agreement_count"], 1)
             self.assertEqual(state["execution_status"], "Executed")
             self.assertEqual(state["holdings"][0]["ticker"], "NVDA")
+            self.assertAlmostEqual(state["holdings"][0]["market_value"], 1_050.0)
+            self.assertAlmostEqual(state["holdings"][0]["unrealized_pnl"], 50.0)
+            self.assertAlmostEqual(state["holdings"][0]["current_weight"], 0.1)
+            self.assertEqual(
+                [row["support"] for row in state["selection_explanations"]],
+                ["V7 + V8", "V8", "V7"],
+            )
+            self.assertAlmostEqual(state["realized_pnl"], 25.0)
+            self.assertAlmostEqual(state["unrealized_pnl"], 50.0)
+            self.assertAlmostEqual(state["cumulative_transaction_costs"], 3.5)
+            self.assertTrue(state["ledger_verified"])
+            self.assertEqual(state["ledger_event_count"], len(events))
             self.assertEqual(set(state["curve"]["series"]), {"V12", "SPY", "QQQ"})
             self.assertEqual(state["latest_trades"][0]["ticker"], "NVDA")
             self.assertAlmostEqual(state["latest_buy_value"], 1_000.0)

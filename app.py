@@ -26,6 +26,18 @@ from src.dashboard_read_model import (
     HISTORICAL_SHARPE,
     build_dashboard_snapshot,
 )
+from src.dashboard_ui import (
+    header as _header,
+    inject_style as _inject_style,
+    money as _money,
+    number as _number,
+    paper_banner as _paper_banner,
+    pct as _pct,
+    selection_cards,
+    signed_money as _signed_money,
+    status_badge as _status_badge,
+    timeline,
+)
 from src.stock_data import (
     clean_stock_data,
     get_company_overview,
@@ -46,109 +58,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="auto",
 )
-
-
-def _inject_style() -> None:
-    st.markdown(
-        """
-        <style>
-        :root { --panel:#111827; --line:#263247; --muted:#93a2b7; --cyan:#35c9ff; --green:#39e5a5; --amber:#f5c451; --red:#ff6b75; }
-        header[data-testid="stHeader"] { background: rgba(6,10,18,.75); backdrop-filter: blur(14px); }
-        .stApp { background: radial-gradient(circle at 78% 0%, rgba(53,201,255,.08), transparent 30%), #070b13; color:#f7f9fc; }
-        .block-container { max-width:1240px; padding-top:4.5rem; padding-bottom:4rem; }
-        section[data-testid="stSidebar"] { background:#090e18; border-right:1px solid #202b3d; }
-        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] { padding-top:.5rem; }
-        .eyebrow { color:var(--cyan); font-size:.78rem; font-weight:700; letter-spacing:.13em; text-transform:uppercase; }
-        .page-title { font-size:clamp(1.8rem,4vw,2.7rem); font-weight:760; letter-spacing:-.04em; margin:.25rem 0 .2rem; }
-        .page-subtitle { color:var(--muted); max-width:760px; margin-bottom:1.5rem; }
-        .paper-banner { padding:.8rem 1rem; border:1px solid rgba(245,196,81,.48); border-radius:12px; color:var(--amber); background:rgba(245,196,81,.07); font-weight:750; letter-spacing:.08em; text-align:center; margin:.25rem 0 1.25rem; }
-        .status-badge { display:inline-flex; align-items:center; gap:.55rem; padding:.48rem .8rem; border-radius:999px; font-weight:750; border:1px solid currentColor; }
-        .status-normal { color:var(--green); background:rgba(57,229,165,.08); }
-        .status-watch { color:var(--amber); background:rgba(245,196,81,.08); }
-        .status-error { color:var(--red); background:rgba(255,107,117,.08); }
-        .empty-state { padding:3rem 1.25rem; border:1px dashed #344157; border-radius:18px; text-align:center; background:rgba(17,24,39,.55); }
-        .empty-state h3 { margin:0 0 .45rem; }
-        .empty-state p { color:var(--muted); margin:0; }
-        .overview-card-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin:.15rem 0 1.25rem; }
-        .overview-card { min-width:0; min-height:230px; padding:1.35rem; border:1px solid var(--line); border-radius:16px; background:linear-gradient(145deg,rgba(17,24,39,.92),rgba(8,13,23,.96)); display:flex; flex-direction:column; box-sizing:border-box; }
-        .overview-card-kicker { color:var(--cyan); font-size:.72rem; font-weight:750; letter-spacing:.12em; margin-bottom:.45rem; }
-        .overview-card-title { color:#f7f9fc; font-size:1.2rem; font-weight:720; min-height:2rem; }
-        .overview-card-value { color:#f7f9fc; font-size:1.7rem; font-weight:720; line-height:1.15; margin-top:1.4rem; }
-        .overview-card-detail { color:var(--muted); font-size:.9rem; line-height:1.65; margin-top:auto; padding-top:1rem; }
-        .read-only { color:#9aa9bd; font-size:.86rem; border-left:3px solid var(--cyan); padding:.45rem .75rem; margin:.6rem 0 1.2rem; }
-        div[data-testid="stMetric"] { min-height:126px; border:1px solid var(--line); border-radius:16px; padding:1rem; background:linear-gradient(145deg,rgba(24,34,51,.94),rgba(12,18,30,.96)); box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 18px 42px rgba(0,0,0,.16); }
-        div[data-testid="stMetricLabel"] { color:#aab5c5; }
-        div[data-testid="stMetricValue"] { font-size:clamp(1.35rem,2.7vw,2.05rem); }
-        div[data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:14px; overflow-x:auto; }
-        div[data-testid="stVerticalBlockBorderWrapper"] { border-color:var(--line) !important; background:rgba(17,24,39,.55); }
-        .event-card { border:1px solid var(--line); border-radius:14px; padding:1rem; background:rgba(17,24,39,.66); margin-bottom:.65rem; }
-        .event-card a { color:var(--cyan); text-decoration:none; }
-        .event-meta { color:var(--muted); font-size:.82rem; margin-top:.35rem; }
-        .footer-note { color:#7f8da2; text-align:center; font-size:.82rem; margin-top:2.5rem; }
-        @media (max-width:720px) {
-          .block-container { padding:4.25rem .7rem 3rem; }
-          .overview-card-grid { grid-template-columns:1fr; gap:.75rem; }
-          .overview-card { min-height:190px; }
-          div[data-testid="stMetric"] { min-height:104px; padding:.8rem; }
-          div[data-testid="stMetricValue"] { font-size:1.35rem; overflow-wrap:anywhere; }
-          .paper-banner { font-size:.78rem; }
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def _header(eyebrow: str, title: str, subtitle: str) -> None:
-    st.markdown(
-        f'<div class="eyebrow">{html.escape(eyebrow)}</div>'
-        f'<div class="page-title">{html.escape(title)}</div>'
-        f'<div class="page-subtitle">{html.escape(subtitle)}</div>',
-        unsafe_allow_html=True,
-    )
-
-
-def _paper_banner() -> None:
-    st.markdown('<div class="paper-banner">FORWARD PAPER TRADING · NOT LIVE CAPITAL</div>', unsafe_allow_html=True)
-
-
-def _status_badge(status: str, label: str) -> None:
-    css = {"NORMAL": "normal", "WATCH": "watch", "ERROR": "error"}.get(status, "watch")
-    st.markdown(f'<span class="status-badge status-{css}">● {html.escape(label)}</span>', unsafe_allow_html=True)
-
-
-def _money(value: float | None) -> str:
-    return "—" if value is None else f"${value:,.2f}"
-
-
-def _signed_money(value: float | None) -> str:
-    if value is None:
-        return "—"
-    sign = "+" if value >= 0 else "−"
-    return f"{sign}${abs(value):,.2f}"
-
-
-def _pct(value: float | None, *, points: bool = False) -> str:
-    if value is None:
-        return "—"
-    suffix = " pp" if points else "%"
-    return f"{value * 100:+.2f}{suffix}"
-
-
-def _number(value: Any, *, currency: bool = False) -> str:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return "—"
-    if abs(number) >= 1_000_000_000_000:
-        result = f"{number / 1_000_000_000_000:.2f}T"
-    elif abs(number) >= 1_000_000_000:
-        result = f"{number / 1_000_000_000:.2f}B"
-    elif abs(number) >= 1_000_000:
-        result = f"{number / 1_000_000:.2f}M"
-    else:
-        result = f"{number:,.2f}"
-    return f"${result}" if currency else result
 
 
 def _ledger_path() -> Path:
@@ -237,12 +146,21 @@ def _market_payload(symbol: str) -> dict[str, Any]:
     else:
         prices = get_long_history_stock_data(symbol, period="1y").tail(180).reset_index(drop=True)
         source = "Yahoo Finance"
+    overview = get_company_overview(symbol)
+    news = get_news_sentiment(symbol, limit=10)
+    events = _yahoo_company_events(symbol)
     return {
         "prices": prices,
-        "overview": get_company_overview(symbol),
-        "news": get_news_sentiment(symbol, limit=10),
+        "overview": overview,
+        "news": news,
         "source": source,
-        **_yahoo_company_events(symbol),
+        "provider_status": [
+            {"Data": "Prices", "Provider": source, "Status": "Available" if not prices.empty else "Unavailable"},
+            {"Data": "Fundamentals", "Provider": "Alpha Vantage", "Status": "Available" if overview else "Unavailable"},
+            {"Data": "News", "Provider": "Alpha Vantage", "Status": "Available" if news else "Unavailable"},
+            {"Data": "Earnings / Filings", "Provider": "Yahoo Finance", "Status": "Available" if events["earnings"] or events["filings"] else "Unavailable"},
+        ],
+        **events,
     }
 
 
@@ -314,6 +232,54 @@ def render_overview() -> None:
         unsafe_allow_html=True,
     )
 
+    st.markdown("### Why V12 Holds These Stocks")
+    st.caption(
+        "These explanations come from the immutable V7/V8 selections saved with the official signal. AI does not decide the allocation."
+    )
+    selection_cards(state.get("selection_explanations") or [])
+
+    if state.get("holdings"):
+        st.markdown("### Portfolio P/L & Contribution")
+        pnl_metrics = st.columns(4)
+        pnl_metrics[0].metric("Realized P/L", _signed_money(state.get("realized_pnl")))
+        pnl_metrics[1].metric("Unrealized P/L", _signed_money(state.get("unrealized_pnl")))
+        pnl_metrics[2].metric(
+            "Cumulative Trading Costs",
+            _money(state.get("cumulative_transaction_costs")),
+        )
+        pnl_metrics[3].metric(
+            "Latest Valuation",
+            state.get("latest_valuation_date") or "—",
+        )
+        holding_rows = []
+        for position in state["holdings"]:
+            holding_rows.append({
+                "Ticker": position["ticker"],
+                "Current Weight": position.get("current_weight"),
+                "Target Weight": position.get("target_weight"),
+                "Market Value": position.get("market_value"),
+                "Unrealized P/L": position.get("unrealized_pnl"),
+            })
+        st.dataframe(
+            pd.DataFrame(holding_rows),
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Current Weight": st.column_config.ProgressColumn(
+                    "Current Weight", min_value=0.0, max_value=1.0, format="percent"
+                ),
+                "Target Weight": st.column_config.NumberColumn(
+                    "Target", format="percent"
+                ),
+                "Market Value": st.column_config.NumberColumn(
+                    "Market Value", format="$%.2f"
+                ),
+                "Unrealized P/L": st.column_config.NumberColumn(
+                    "Unrealized P/L", format="$%.2f"
+                ),
+            },
+        )
+
     st.markdown("### Latest Rebalance")
     latest_trades = state.get("latest_trades") or []
     if latest_trades:
@@ -352,7 +318,7 @@ def render_overview() -> None:
             costs = state.get("latest_trade_fees")
         trade_metrics[2].metric("Trading Costs", _money(costs))
         turnover = state.get("latest_turnover")
-        trade_metrics[3].metric("Turnover", "—" if turnover is None else f"{float(turnover):.1%}")
+        trade_metrics[3].metric("Portfolio Changed", "—" if turnover is None else f"{float(turnover):.1%}")
         rows = []
         for trade in latest_trades:
             side = trade["action"]
@@ -361,12 +327,9 @@ def render_overview() -> None:
             rows.append({
                 "Action": side,
                 "Ticker": trade["ticker"],
-                "Before": f'{float(trade.get("before_shares") or 0.0):,.4f}',
-                "Change": f'{float(trade["shares"]) if trade["action"] == "BUY" else -float(trade["shares"]):+,.4f}',
-                "After": f'{float(trade.get("after_shares") or 0.0):,.4f}',
-                "Target": "—" if trade.get("target_weight") is None else f'{float(trade["target_weight"]):.0%}',
                 "Trade Value": _money(trade["trade_value"]),
                 "Realized P/L": _signed_money(trade.get("realized_pnl")),
+                "Target": "—" if trade.get("target_weight") is None else f'{float(trade["target_weight"]):.0%}',
                 "Reason": trade.get("reason") or "Monthly rebalance",
             })
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
@@ -374,11 +337,14 @@ def render_overview() -> None:
         next_execution = state.get("next_execution_date")
         if next_signal and next_execution:
             st.caption(f"Next expected cycle · Signal after {next_signal} close → simulated execution at {next_execution} open")
-        st.caption("Realized P/L is shown only for sales and includes commission. Turnover measures the larger of purchases or sales relative to execution-day portfolio value.")
+        st.caption("Realized P/L is shown only for sales and includes commission. Portfolio Changed shows the larger of purchases or sales as a percentage of execution-day portfolio value.")
         with st.expander("Execution audit details"):
             audit_rows = [{
                 "Side": "SELL · TRIM" if trade.get("is_trim") else trade["action"],
                 "Ticker": trade["ticker"],
+                "Before": f'{float(trade.get("before_shares") or 0.0):,.4f}',
+                "Change": f'{float(trade["shares"]) if trade["action"] == "BUY" else -float(trade["shares"]):+,.4f}',
+                "After": f'{float(trade.get("after_shares") or 0.0):,.4f}',
                 "Shares": f'{trade["shares"]:,.4f}',
                 "Fill Price": _money(trade["fill_price"]),
                 "Trade Value": _money(trade["trade_value"]),
@@ -391,6 +357,19 @@ def render_overview() -> None:
         st.info("The latest signal is waiting for execution. Trade details will appear here after the T+1 open.")
     elif state["latest_signal"] is not None:
         st.info("No trades were required because the portfolio already matched the latest target weights.")
+
+    st.markdown("### Automation Timeline")
+    next_signal = state.get("next_signal_date") or "Waiting"
+    next_execution = state.get("next_execution_date") or "Waiting"
+    timeline([
+        ("Latest signal", state.get("signal_date") or "Not generated"),
+        (
+            "T+1 execution",
+            f'{state.get("execution_status") or "—"} · {state.get("execution_date") or "—"}',
+        ),
+        ("Latest valuation", state.get("latest_valuation_date") or "Waiting"),
+        ("Next cycle", f"{next_signal} close → {next_execution} open"),
+    ])
 
 
 def render_market() -> None:
@@ -422,6 +401,13 @@ def render_market() -> None:
     price_col, meta_col = st.columns([1, 2])
     price_col.metric("Latest Close", _money(current), f"{daily_change:+.2%}")
     meta_col.caption(f"Source: {payload['source']} · As of {prices['date'].iloc[-1]} · Delayed data")
+    with st.expander("Data coverage & providers"):
+        st.dataframe(
+            pd.DataFrame(payload["provider_status"]),
+            width="stretch",
+            hide_index=True,
+        )
+        st.caption("Unavailable sections do not affect Frozen V12. They only limit the Market Intelligence view.")
 
     figure = go.Figure(go.Scatter(
         x=pd.to_datetime(prices["date"]), y=prices["close"], mode="lines",
@@ -540,16 +526,32 @@ def render_strategy_health() -> None:
     for warning in state.get("warnings") or []:
         st.warning(f"Research watch only — {warning}. This does not change or stop Frozen V12.")
 
+    st.markdown("### Automation pipeline")
+    sync_time = state.get("snapshot_generated_at") or state.get("last_event_created_at") or "—"
+    timeline([
+        ("Data", state.get("last_data_asof") or "Waiting"),
+        ("Signal", state.get("signal_date") or "Not generated"),
+        ("Execution", state.get("execution_status") or "—"),
+        ("Dashboard sync", sync_time),
+    ])
+
     st.markdown("### System safety checks")
     st.caption("These checks answer whether the displayed records and the next automated cycle can be trusted.")
     operational_metrics = st.columns(4)
     operational_metrics[0].metric("V12 Status", "FROZEN")
-    operational_metrics[1].metric(
-        "Ledger / Sync",
-        "Error" if state["integrity_error"] else "Verified",
-    )
+    operational_metrics[1].metric("Ledger", "Verified" if state.get("ledger_verified") else "Unavailable")
     operational_metrics[2].metric("T+1 Execution", state["execution_status"])
-    operational_metrics[3].metric("Data As Of", state["last_data_asof"] or "—")
+    operational_metrics[3].metric(
+        "Cloud Snapshot",
+        "Verified" if state.get("snapshot_generated_at") else "Local read",
+    )
+    source_commit = str(state.get("source_commit") or "")
+    source_text = source_commit[:8] if source_commit else "local checkout"
+    st.caption(
+        f'Data as of {state.get("last_data_asof") or "—"} · '
+        f'{int(state.get("ledger_event_count") or 0)} verified ledger events · '
+        f'Source {source_text}'
+    )
 
     with st.expander("What would block trading?"):
         st.write("- Ledger hash, schema, or signed snapshot verification failure")

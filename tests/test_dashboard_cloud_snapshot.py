@@ -44,7 +44,26 @@ def _state():
         "excess_vs_qqq": 0.0,
         "max_drawdown": 0.0,
         "cash": 0.0,
-        "holdings": [{"ticker": "AAPL", "shares": 10.0, "average_cost": 100.0, "target_weight": 1.0}],
+        "holdings": [{
+            "ticker": "AAPL",
+            "shares": 10.0,
+            "average_cost": 100.0,
+            "mark": 105.0,
+            "market_value": 1050.0,
+            "unrealized_pnl": 50.0,
+            "current_weight": 1.0,
+            "target_weight": 1.0,
+        }],
+        "selection_explanations": [{
+            "ticker": "AAPL",
+            "target_weight": 1.0,
+            "support": "V7 + V8",
+            "reason": "Selected by both frozen momentum components.",
+        }],
+        "realized_pnl": 25.0,
+        "unrealized_pnl": 50.0,
+        "cumulative_transaction_costs": 3.5,
+        "latest_valuation_date": "2026-09-01",
         "latest_signal": {"payload": {"private": "must-not-export"}},
         "signal_date": "2026-08-31",
         "market_regime": "BULL",
@@ -91,6 +110,9 @@ def _state():
         "integrity_error": None,
         "warnings": ["樣本不足"],
         "last_data_asof": "2026-09-01T16:00:00-04:00",
+        "last_event_created_at": "2026-09-01T20:05:00+00:00",
+        "ledger_event_count": 2,
+        "ledger_verified": True,
     }
 
 
@@ -112,6 +134,10 @@ class DashboardCloudSnapshotTests(unittest.TestCase):
         self.assertEqual(recovered["latest_trade_fees"], 1.0)
         self.assertEqual(recovered["latest_transaction_costs"], 1.5)
         self.assertEqual(recovered["next_execution_date"], "2026-10-01")
+        self.assertEqual(recovered["selection_explanations"][0]["support"], "V7 + V8")
+        self.assertEqual(recovered["unrealized_pnl"], 50.0)
+        self.assertEqual(recovered["snapshot_generated_at"], "2026-09-02T00:00:00+00:00")
+        self.assertEqual(recovered["source_commit"], "abc123")
 
     def test_tampering_and_wrong_secret_fail_closed(self):
         envelope = create_signed_snapshot(_state(), SECRET)
