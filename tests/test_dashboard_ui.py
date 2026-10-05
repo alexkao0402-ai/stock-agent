@@ -1,9 +1,11 @@
 import unittest
+from datetime import datetime, timezone
 
 import pandas as pd
 
 from src.dashboard_ui import (
     activity_event_rows,
+    freshness_status,
     latest_curve_date,
     selection_rows,
     trade_activity_rows,
@@ -11,6 +13,30 @@ from src.dashboard_ui import (
 
 
 class DashboardUiFallbackTests(unittest.TestCase):
+    def test_weekend_and_monday_before_publication_are_current(self):
+        for instant in ("2026-10-04T18:00:00", "2026-10-05T23:50:00"):
+            status, _ = freshness_status(
+                {"latest_valuation_date": "2026-10-02"},
+                now=datetime.fromisoformat(instant).replace(tzinfo=timezone.utc),
+            )
+            self.assertEqual(status, "CURRENT")
+
+    def test_missing_monday_update_after_grace_is_delayed(self):
+        status, message = freshness_status(
+            {"latest_valuation_date": "2026-10-02"},
+            now=datetime(2026, 10, 6, 1, 1, tzinfo=timezone.utc),
+        )
+        self.assertEqual(status, "DELAYED")
+        self.assertIn("2026-10-05", message)
+
+    def test_saved_component_explains_trade(self):
+        rows = trade_activity_rows(
+            [{"action": "BUY", "ticker": "MU", "target_weight": .5}],
+            {"v7_selected": ["MU"], "v8_selected": ["MU"], "signal_date": "2026-09-30"},
+        )
+        self.assertIn("V7 + V8 consensus", rows[0]["Reason"])
+        self.assertIn("2026-09-30", rows[0]["Reason"])
+
     def test_old_snapshot_reconstructs_selection_explanations(self):
         state = {
             "target_weights": {"GOOGL": 0.25, "MU": 0.50, "NVDA": 0.25},

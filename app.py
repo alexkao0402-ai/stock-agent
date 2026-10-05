@@ -28,6 +28,7 @@ from src.dashboard_read_model import (
 )
 from src.dashboard_ui import (
     activity_event_rows,
+    freshness_status,
     header as _header,
     inject_style as _inject_style,
     latest_curve_date,
@@ -225,6 +226,11 @@ def render_overview() -> None:
         f"Prices as of {latest_valuation or 'Unavailable'} · "
         f"Last verified publication: {state.get('snapshot_generated_at') or state.get('last_event_created_at') or 'Unavailable'}"
     )
+    freshness, freshness_message = freshness_status(state)
+    if freshness != "CURRENT":
+        st.warning(freshness_message)
+    else:
+        st.caption(freshness_message)
     if state.get("trading_blocked"):
         st.error("Action required: dashboard data or execution needs attention. Open Strategy Health for details.")
     else:
@@ -462,7 +468,7 @@ def render_activity() -> None:
             and (ticker_filter == "All tickers" or row.get("ticker") == ticker_filter)
         ]
         st.dataframe(
-            pd.DataFrame(trade_activity_rows(filtered_trades)),
+            pd.DataFrame(trade_activity_rows(filtered_trades, state)),
             width="stretch",
             hide_index=True,
         )
@@ -628,6 +634,9 @@ def render_strategy_health() -> None:
     state = _dashboard_state()
 
     st.markdown("### What can you learn here?")
+    freshness, freshness_message = freshness_status(state)
+    if freshness != "CURRENT":
+        st.warning(freshness_message)
     posture = "INVESTED" if state.get("market_regime") == "BULL" and state.get("target_weights") else "CASH / WAITING"
     maturity = "BUILDING SAMPLE" if state.get("rolling_sharpe") is None else state["health_label"].upper()
     st.markdown(

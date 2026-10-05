@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import html
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
 import streamlit as st
+from src.trading_calendar import is_session, previous_session
 
 
 def inject_style() -> None:
@@ -295,7 +297,32 @@ def activity_event_rows(state: dict[str, Any]) -> list[dict[str, str]]:
     return rows
 
 
-def trade_activity_rows(trades: list[dict[str, Any]]) -> list[dict[str, str]]:
+def freshness_status(state: dict[str, Any], *, now: datetime | None = None) -> tuple[str, str]:
+    """Allow 90 minutes after the scheduled 23:30 UTC publication cycle."""
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        raise ValueError("now must be timezone-aware")
+    current = current.astimezone(timezone.utc)
+    candidate = current.date() - timedelta(days=1)
+    if current.time() < time(1):
+        candidate -= timedelta(days=1)
+    if not is_session(candidate):
+        candidate = previous_session(candidate)
+    raw = latest_curve_date(state)
+    if not raw:
+        return "UNAVAILABLE", "Valuation date unavailable. Check dashboard synchronization."
+    try:
+        valuation = datetime.fromisoformat(raw[:10]).date()
+    except ValueError:
+        return "UNAVAILABLE", "Valuation date is invalid. Check dashboard synchronization."
+    if valuation < candidate:
+        return "DELAYED", f"Data update delayed: expected prices through {candidate}; currently {valuation}. Check the latest automation run."
+    if valuation > current.date():
+        return "UNAVAILABLE", "Valuation date is in the future. Check dashboard synchronization."
+    return "CURRENT", f"Data is current for the publication schedule (latest required session: {candidate})."
+
+
+def trade_activity_rows(trades: list[dict[str, Any]], state: dict[str, Any] | None = None) -> list[dict[str, str]]:
     """Format execution rows without changing the signed trade evidence."""
     rows: list[dict[str, str]] = []
     for trade in trades:
@@ -303,6 +330,20 @@ def trade_activity_rows(trades: list[dict[str, Any]]) -> list[dict[str, str]]:
         if trade.get("is_trim"):
             action = "SELL · TRIM"
         target = trade.get("target_weight")
+        reason = str(trade.get("reason") or "Monthly rebalance")
+        if state is not None:
+            ticker = trade.get("ticker")
+            v7 = ticker in (state.get("v7_selected") or [])
+            v8 = ticker in (state.get("v8_selected") or [])
+            if v7 or v8:
+                support = "V7 + V8 consensus" if v7 and v8 else "V7 12–1 momentum" if v7 else "V8 composite momentum"
+                reason += f" · Selected by {support} in the saved {state.get('signal_date') or 'official'} signal."
+            elif state.get("market_regime") and state.get("market_regime") != "BULL":
+                reason += " · Saved market regime requires cash."
+            elif state.get("v7_selected") is not None and state.get("v8_selected") is not None:
+                reason += " · Not selected by either component in the saved signal."
+            else:
+                reason += " · Component evidence unavailable in this snapshot."
         rows.append({
             "Action": action,
             "Ticker": str(trade.get("ticker") or "—"),
@@ -311,6 +352,6 @@ def trade_activity_rows(trades: list[dict[str, Any]]) -> list[dict[str, str]]:
             "Trade Value": money(trade.get("trade_value")),
             "Realized P/L": signed_money(trade.get("realized_pnl")),
             "Target": "—" if target is None else f"{float(target):.0%}",
-            "Reason": str(trade.get("reason") or "Monthly rebalance"),
+            "Reason": reason,
         })
     return rows
