@@ -129,6 +129,68 @@ def number(value: Any, *, currency: bool = False) -> str:
     return f"${result}" if currency else result
 
 
+def selection_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return saved explanations, with a display-only fallback for old snapshots."""
+    existing = state.get("selection_explanations") or []
+    if existing:
+        return list(existing)
+
+    weights = state.get("target_weights") or {}
+    v7 = set(state.get("v7_selected") or [])
+    v8 = set(state.get("v8_selected") or [])
+    rows: list[dict[str, Any]] = []
+    for ticker, raw_weight in sorted(
+        weights.items(), key=lambda item: (-float(item[1]), str(item[0]))
+    ):
+        in_v7 = ticker in v7
+        in_v8 = ticker in v8
+        if in_v7 and in_v8:
+            support = "V7 + V8"
+            reason = (
+                "Selected by both frozen momentum components; consensus receives "
+                "the larger allocation."
+            )
+        elif in_v7:
+            support = "V7"
+            reason = "Selected by the frozen 12–1 momentum component."
+        elif in_v8:
+            support = "V8"
+            reason = (
+                "Selected by the frozen 3–1 / 6–1 / 12–1 composite momentum "
+                "component."
+            )
+        else:
+            support = "Frozen V12"
+            reason = "Saved in the official immutable target allocation."
+        rows.append(
+            {
+                "ticker": str(ticker),
+                "target_weight": float(raw_weight),
+                "support": support,
+                "reason": reason,
+            }
+        )
+    return rows
+
+
+def latest_curve_date(state: dict[str, Any]) -> str | None:
+    """Use the explicit valuation date or the latest immutable curve observation."""
+    explicit = state.get("latest_valuation_date")
+    if explicit:
+        return str(explicit)
+    curve = state.get("curve")
+    if curve is None or getattr(curve, "empty", True) or "date" not in curve:
+        return None
+    dates = curve["date"].dropna()
+    if dates.empty:
+        return None
+    latest = dates.max()
+    try:
+        return latest.strftime("%Y-%m-%d")
+    except AttributeError:
+        return str(latest)[:10]
+
+
 def selection_cards(rows: list[dict[str, Any]]) -> None:
     if not rows:
         return

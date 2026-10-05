@@ -29,11 +29,13 @@ from src.dashboard_read_model import (
 from src.dashboard_ui import (
     header as _header,
     inject_style as _inject_style,
+    latest_curve_date,
     money as _money,
     number as _number,
     paper_banner as _paper_banner,
     pct as _pct,
     selection_cards,
+    selection_rows,
     signed_money as _signed_money,
     status_badge as _status_badge,
     timeline,
@@ -168,6 +170,7 @@ def render_overview() -> None:
     _header("Portfolio", "Overview / Paper Trading", "Current paper portfolio, performance, and latest monthly rebalance.")
     _paper_banner()
     state = _dashboard_state()
+    latest_valuation = latest_curve_date(state)
     if state["integrity_error"]:
         st.error(f"Dashboard sync error: {state['integrity_error']}")
     columns = st.columns(5)
@@ -236,7 +239,7 @@ def render_overview() -> None:
     st.caption(
         "These explanations come from the immutable V7/V8 selections saved with the official signal. AI does not decide the allocation."
     )
-    selection_cards(state.get("selection_explanations") or [])
+    selection_cards(selection_rows(state))
 
     if state.get("holdings"):
         st.markdown("### Portfolio P/L & Contribution")
@@ -249,8 +252,20 @@ def render_overview() -> None:
         )
         pnl_metrics[3].metric(
             "Latest Valuation",
-            state.get("latest_valuation_date") or "—",
+            latest_valuation or "—",
         )
+        if any(
+            state.get(field) is None
+            for field in (
+                "realized_pnl",
+                "unrealized_pnl",
+                "cumulative_transaction_costs",
+            )
+        ):
+            st.caption(
+                "Detailed position P/L will populate after the next signed cloud "
+                "valuation snapshot. Missing values are not estimated."
+            )
         holding_rows = []
         for position in state["holdings"]:
             holding_rows.append({
@@ -367,7 +382,7 @@ def render_overview() -> None:
             "T+1 execution",
             f'{state.get("execution_status") or "—"} · {state.get("execution_date") or "—"}',
         ),
-        ("Latest valuation", state.get("latest_valuation_date") or "Waiting"),
+        ("Latest valuation", latest_valuation or "Waiting"),
         ("Next cycle", f"{next_signal} close → {next_execution} open"),
     ])
 
