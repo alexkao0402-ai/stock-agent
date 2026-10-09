@@ -8,7 +8,6 @@ from typing import Any
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-import yfinance as yf
 
 from src.ai_analysis import (
     compact_ai_provider,
@@ -16,6 +15,7 @@ from src.ai_analysis import (
     has_compact_ai_key,
 )
 from src.config import get_secret
+from src.market_intelligence import market_payload, valid_symbol
 from src.v3_dashboard import render_v3_dashboard
 from src.dashboard_cloud_snapshot import (
     DashboardSnapshotError,
@@ -43,14 +43,6 @@ from src.dashboard_ui import (
     status_badge as _status_badge,
     timeline,
     trade_activity_rows,
-)
-from src.stock_data import (
-    clean_stock_data,
-    get_company_overview,
-    get_daily_stock_data,
-    get_long_history_stock_data,
-    get_news_sentiment,
-    has_alpha_vantage_key,
 )
 
 
@@ -109,65 +101,9 @@ def _dashboard_state() -> dict[str, Any]:
         return state
 
 
-def _yahoo_company_events(symbol: str) -> dict[str, list[dict[str, str]]]:
-    earnings: list[dict[str, str]] = []
-    filings: list[dict[str, str]] = []
-    ticker = yf.Ticker(symbol)
-    try:
-        frame = ticker.get_earnings_dates(limit=4)
-        if isinstance(frame, pd.DataFrame) and not frame.empty:
-            for index, row in frame.head(4).iterrows():
-                earnings.append({
-                    "date": pd.Timestamp(index).strftime("%Y-%m-%d"),
-                    "estimate": _number(row.get("EPS Estimate")),
-                    "reported": _number(row.get("Reported EPS")),
-                    "surprise": _number(row.get("Surprise(%)")),
-                })
-    except Exception:
-        pass
-    try:
-        raw_filings = getattr(ticker, "sec_filings", None)
-        if callable(raw_filings):
-            raw_filings = raw_filings()
-        for item in (raw_filings or [])[:6]:
-            if not isinstance(item, dict):
-                continue
-            filings.append({
-                "date": str(item.get("date") or item.get("filingDate") or "")[:10],
-                "type": str(item.get("type") or item.get("formType") or "SEC Filing"),
-                "title": str(item.get("title") or item.get("description") or "Company filing"),
-                "url": str(item.get("edgarUrl") or item.get("url") or ""),
-            })
-    except Exception:
-        pass
-    return {"earnings": earnings, "filings": filings}
-
-
 @st.cache_data(ttl=1800, show_spinner=False)
 def _market_payload(symbol: str) -> dict[str, Any]:
-    raw = get_daily_stock_data(symbol)
-    source = "Alpha Vantage"
-    if "Time Series (Daily)" in raw:
-        prices = clean_stock_data(raw)
-    else:
-        prices = get_long_history_stock_data(symbol, period="1y").tail(180).reset_index(drop=True)
-        source = "Yahoo Finance"
-    overview = get_company_overview(symbol)
-    news = get_news_sentiment(symbol, limit=10)
-    events = _yahoo_company_events(symbol)
-    return {
-        "prices": prices,
-        "overview": overview,
-        "news": news,
-        "source": source,
-        "provider_status": [
-            {"Data": "Prices", "Provider": source, "Status": "Available" if not prices.empty else "Unavailable"},
-            {"Data": "Fundamentals", "Provider": "Alpha Vantage", "Status": "Available" if overview else "Unavailable"},
-            {"Data": "News", "Provider": "Alpha Vantage", "Status": "Available" if news else "Unavailable"},
-            {"Data": "Earnings / Filings", "Provider": "Yahoo Finance", "Status": "Available" if events["earnings"] or events["filings"] else "Unavailable"},
-        ],
-        **events,
-    }
+    return market_payload(symbol)
 
 
 def _chart_layout(*, height: int) -> dict[str, Any]:
@@ -525,6 +461,9 @@ def render_market() -> None:
     with action:
         clicked = st.button("Search", type="primary", width="stretch")
     if clicked:
+        if not valid_symbol(symbol):
+            st.warning("Enter a valid ticker, for example NVDA, AAPL or BRK-B.")
+            return
         st.session_state["market_symbol"] = symbol
     symbol = st.session_state.get("market_symbol", "")
     if not symbol:
@@ -535,17 +474,20 @@ def render_market() -> None:
         payload = _market_payload(symbol)
     prices = payload["prices"]
     if prices.empty:
-        st.error("Price data is unavailable. Check the ticker or try again later.")
-        return
+        st.warning("Prices are temporarily unavailable. Other available company information is shown below.")
     overview = payload["overview"] or {}
-    current = float(prices["close"].iloc[-1])
+    current = float(prices["close"].iloc[-1]) if not prices.empty else None
     previous = float(prices["close"].iloc[-2]) if len(prices) > 1 else current
-    daily_change = current / previous - 1 if previous else 0.0
+    daily_change = current / previous - 1 if current is not None and previous else None
     company = overview.get("公司名稱") or symbol
     st.markdown(f"### {html.escape(symbol)} · {html.escape(str(company))}")
     price_col, meta_col = st.columns([1, 2])
-    price_col.metric("Latest Close", _money(current), f"{daily_change:+.2%}")
-    meta_col.caption(f"Source: {payload['source']} · As of {prices['date'].iloc[-1]} · Delayed data")
+    price_col.metric("Latest Close", _money(current), f"{daily_change:+.2%}" if daily_change is not None else None)
+    meta_col.caption(f"Price source: {payload['source']} · As of {prices['date'].iloc[-1] if not prices.empty else 'Unavailable'} · Delayed data")
+    st.caption(f"Fundamentals: {payload['fundamentals_source']} · News: {payload['news_source']} · Fetched: {payload['fetched_at']}")
+    issues = [row for row in payload['provider_status'] if row['Status'] not in {'Available','No data'}]
+    for row in issues:
+        st.caption(f"{row['Provider']} / {row['Data']}: {row['Status']}. Available backup results are shown where possible.")
     with st.expander("Data coverage & providers"):
         st.dataframe(
             pd.DataFrame(payload["provider_status"]),
@@ -554,15 +496,16 @@ def render_market() -> None:
         )
         st.caption("Unavailable sections do not affect Frozen V12. They only limit the Market Intelligence view.")
 
-    figure = go.Figure(go.Scatter(
-        x=pd.to_datetime(prices["date"]), y=prices["close"], mode="lines",
-        line={"color": COLORS["V12"], "width": 2.5}, fill="tozeroy", fillcolor="rgba(57,217,138,.045)",
-        hovertemplate="%{x|%Y-%m-%d}<br>$%{y:,.2f}<extra></extra>",
-    ))
-    layout = _chart_layout(height=330)
-    layout["yaxis"].update({"tickprefix": "$"})
-    figure.update_layout(**layout)
-    st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
+    if not prices.empty:
+        figure = go.Figure(go.Scatter(
+            x=pd.to_datetime(prices["date"]), y=prices["close"], mode="lines",
+            line={"color": COLORS["V12"], "width": 2.5}, fill="tozeroy", fillcolor="rgba(57,217,138,.045)",
+            hovertemplate="%{x|%Y-%m-%d}<br>$%{y:,.2f}<extra></extra>",
+        ))
+        layout = _chart_layout(height=330)
+        layout["yaxis"].update({"tickprefix": "$"})
+        figure.update_layout(**layout)
+        st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
 
     st.markdown("### Earnings & Fundamentals")
     metrics = st.columns(5)
@@ -578,12 +521,15 @@ def render_market() -> None:
     if payload["earnings"]:
         with st.expander("Recent / Scheduled Earnings", expanded=True):
             st.dataframe(pd.DataFrame(payload["earnings"]).rename(columns={"date": "Date", "estimate": "EPS Estimate", "reported": "Reported EPS", "surprise": "Surprise"}), width="stretch", hide_index=True)
-    elif not has_alpha_vantage_key():
-        st.caption("Alpha Vantage is not configured; some earnings and fundamental fields may be unavailable.")
+    else:
+        st.caption("No earnings-date rows were returned. This does not mean the company has no earnings reports.")
+    if not overview:
+        st.warning("Fundamentals are unavailable from the current providers; missing values are not zero.")
 
     news_col, filing_col = st.columns(2)
     with news_col:
-        st.markdown("### Material News")
+        st.markdown("### Latest News")
+        st.caption("Ticker-related coverage, not verified material events. Google News backup results are search matches; check the publisher and publication date.")
         if payload["news"]:
             for item in payload["news"][:5]:
                 title = html.escape(str(item.get("title") or "Untitled"))
@@ -592,7 +538,7 @@ def render_market() -> None:
                 meta = " · ".join(filter(None, [str(item.get("source") or ""), str(item.get("time_published") or "")]))
                 st.markdown(f'<div class="event-card">{link}<div class="event-meta">{html.escape(meta)}</div></div>', unsafe_allow_html=True)
         else:
-            st.info("No news is currently available. Configure ALPHAVANTAGE_API_KEY to add news coverage.")
+            st.info("No news was returned by the available providers. Check Data coverage & providers for access or connection issues.")
     with filing_col:
         st.markdown("### SEC / Company Filings")
         if payload["filings"]:
