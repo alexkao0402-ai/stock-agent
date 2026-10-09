@@ -1,0 +1,5 @@
+# Preserve the exact source bytes pinned by the existing V3 initialization.
+# This is transport formatting only; never relax or replace frozen hashes.
+src/v3_accounting/*.py text eol=lf
+src/paper_accounting.py text eol=crlf
+src/trading_calendar.py text eol=crlf
