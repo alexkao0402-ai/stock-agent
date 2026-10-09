@@ -1,4 +1,3 @@
-import os
 import time
 from typing import Any
 
@@ -8,9 +7,9 @@ import yfinance as yf
 from dotenv import load_dotenv
 
 from src.cache_utils import load_from_cache, save_to_cache
+from src.config import get_secret
 
 load_dotenv()
-api_key = os.getenv("ALPHAVANTAGE_API_KEY")
 ALPHA_VANTAGE_URL = "https://www.alphavantage.co/query"
 
 
@@ -18,8 +17,13 @@ class DataProviderError(RuntimeError):
     pass
 
 
+def has_alpha_vantage_key() -> bool:
+    return bool(get_secret("ALPHAVANTAGE_API_KEY"))
+
+
 def _request_json(params: dict[str, Any], timeout: int = 15, retries: int = 2):
     """Centralized Alpha Vantage request with timeout/retry/error handling."""
+    api_key = get_secret("ALPHAVANTAGE_API_KEY")
     if not api_key:
         raise DataProviderError("ALPHAVANTAGE_API_KEY is not configured.")
 
@@ -55,6 +59,7 @@ def get_daily_stock_data(symbol, outputsize="compact"):
     if cached_data is not None:
         return cached_data
 
+    api_key = get_secret("ALPHAVANTAGE_API_KEY")
     try:
         data = _request_json({
             "function": "TIME_SERIES_DAILY",
@@ -91,6 +96,7 @@ def get_news_sentiment(symbol, limit=20):
     if cached_data is not None:
         return cached_data
 
+    api_key = get_secret("ALPHAVANTAGE_API_KEY")
     try:
         data = _request_json({
             "function": "NEWS_SENTIMENT",
@@ -133,6 +139,7 @@ def get_company_overview(symbol):
     if cached_data is not None:
         return cached_data
 
+    api_key = get_secret("ALPHAVANTAGE_API_KEY")
     try:
         data = _request_json({
             "function": "OVERVIEW",
@@ -170,50 +177,14 @@ def get_company_overview(symbol):
     return overview
 
 
-def get_crypto_daily_data(symbol="BTC", market="USD"):
-    cache_key = f"{symbol}_{market}_crypto_daily"
-    cached_data = load_from_cache(cache_key, max_age_hours=20)
-    if cached_data is not None:
-        return cached_data
-
-    try:
-        data = _request_json({
-            "function": "DIGITAL_CURRENCY_DAILY",
-            "symbol": symbol,
-            "market": market,
-            "apikey": api_key,
-        })
-    except DataProviderError:
-        return {}
-
-    if "Time Series (Digital Currency Daily)" in data:
-        save_to_cache(cache_key, data)
-    return data
-
-
-def clean_crypto_data(raw_data):
-    daily_data = raw_data["Time Series (Digital Currency Daily)"]
-    df = pd.DataFrame.from_dict(daily_data, orient="index")
-    df.columns = ["open", "high", "low", "close", "volume"]
-    df = df.astype({
-        "open": float,
-        "high": float,
-        "low": float,
-        "close": float,
-        "volume": float,
-    })
-    df.index.name = "date"
-    return df.reset_index().sort_values("date").reset_index(drop=True)
-
-
 def get_long_history_stock_data(symbol, period="2y"):
-    cache_key = f"{symbol}_long_history_{period}"
+    cache_key = f"{symbol}_long_history_{period}_adjusted_v1"
     cached_data = load_from_cache(cache_key, max_age_hours=20)
     if cached_data is not None:
         return pd.DataFrame(cached_data)
 
     try:
-        raw_df = yf.download(symbol, period=period, progress=False, auto_adjust=False)
+        raw_df = yf.download(symbol, period=period, progress=False, auto_adjust=True)
     except Exception:
         return pd.DataFrame()
 

@@ -1,0 +1,8 @@
+{
+  "original_signal_sha256": "6b41b2036ee40a6103823dfb984a9360d0bcfb40ad2bd41012b477ad9b8b41b8",
+  "original_function_ast_sha256_calendar_path_normalized": "ee9a98396081ffa911bae9d0591351579a74d0664014f377f6054cb9c200c33b",
+  "original_rules_ast_sha256": "665fc8f89b9d34ccf795ad9a4acfcfcf495d248cd604b339e31fe551c634b1f2",
+  "scope": "V3_ISOLATED_CHALLENGER_NOT_OFFICIAL_V12",
+  "adaptation": "Package import paths, repo root, calendar pathname, V3-only default store",
+  "migration": "No old V2/V12 or synthetic snapshot migration; create a separately reviewed V3 freeze"
+}

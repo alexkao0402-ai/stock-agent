@@ -4,7 +4,7 @@
 
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # 所有預測紀錄會存放在這個資料夾裡
 PREDICTIONS_DIR = "predictions"
@@ -92,7 +92,42 @@ def list_predictions(symbol=None):
             record["_filepath"] = filepath  # 順便記錄檔案路徑，方便之後更新這筆紀錄
             records.append(record)
 
-    return records
+    return sorted(records, key=lambda record: record.get("timestamp", ""), reverse=True)
+
+
+def get_recent_prediction(symbol, max_age_hours=12):
+    """Return the newest reusable analysis record within the requested age."""
+    records = list_predictions(symbol)
+    if not records:
+        return None
+    records.sort(key=lambda record: record.get("timestamp", ""), reverse=True)
+    newest = records[0]
+    try:
+        created_at = datetime.fromisoformat(newest["timestamp"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if datetime.now() - created_at > timedelta(hours=max_age_hours):
+        return None
+    return newest
+
+
+def enrich_prediction(filepath, strategy_signals=None, strategy_validation=None, market_regime=None):
+    """Append research fields while preserving the immutable original prediction."""
+    with open(filepath, "r", encoding="utf-8") as f:
+        record = json.load(f)
+    snapshot_added = False
+    if strategy_signals is not None and not record.get("strategy_signals"):
+        record["strategy_signals"] = strategy_signals
+        snapshot_added = True
+    if market_regime is not None and snapshot_added and not record.get("market_regime"):
+        record["market_regime"] = market_regime
+    if strategy_validation:
+        existing = record.setdefault("strategy_validation", {})
+        for horizon, outcome in strategy_validation.items():
+            existing.setdefault(horizon, outcome)
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(record, f, ensure_ascii=False, indent=2)
+    return record
 
 def classify_scenario(actual_price, record):
     """

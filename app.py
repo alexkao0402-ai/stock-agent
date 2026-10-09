@@ -1,522 +1,711 @@
-# app.py — UI V2
-# 簡潔、高級感、少分頁版本
+"""Read-only Streamlit dashboard for Frozen V12 forward paper trading."""
+from __future__ import annotations
 
-import time
+import html
+from pathlib import Path
+from typing import Any
+
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
-from src.stock_data import (
-    get_daily_stock_data,
-    clean_stock_data,
-    get_news_sentiment,
-    get_company_overview,
-    get_long_history_stock_data,
-    get_crypto_daily_data,
-    clean_crypto_data,
+from src.ai_analysis import (
+    compact_ai_provider,
+    generate_compact_summary,
+    has_compact_ai_key,
 )
-from src.ai_analysis import generate_report, extract_structured_data
-from src.prediction_tracker import save_prediction, list_predictions, check_prediction_outcome
-from src.strategy_v1 import (
-    add_trend_filter,
-    add_momentum,
-    add_relative_strength,
-    add_entry_exit_signals,
-    run_backtest_v1,
-    run_backtest_v1_with_equity_curve,
-    run_backtest_v1_with_takeprofit_v2,
-    run_backtest_v1_with_trailing_exit,
-    calculate_buy_and_hold,
-    calculate_performance_metrics,
-    calculate_risk_metrics,
-    build_comparison_row,
-    build_trade_diagnostics,
+from src.config import get_secret
+from src.market_intelligence import market_payload, valid_symbol
+from src.v3_dashboard import render_v3_dashboard
+from src.dashboard_cloud_snapshot import (
+    DashboardSnapshotError,
+    load_signed_snapshot,
+    load_supabase_snapshot,
 )
-from src.regime_analysis import build_regime_series
+from src.dashboard_read_model import (
+    DEFAULT_LEDGER_PATH,
+    HISTORICAL_SHARPE,
+    build_dashboard_snapshot,
+)
+from src.dashboard_ui import (
+    activity_event_rows,
+    freshness_status,
+    header as _header,
+    inject_style as _inject_style,
+    latest_curve_date,
+    money as _money,
+    number as _number,
+    paper_banner as _paper_banner,
+    pct as _pct,
+    selection_cards,
+    selection_rows,
+    signed_money as _signed_money,
+    status_badge as _status_badge,
+    timeline,
+    trade_activity_rows,
+)
 
 
-# ============================================================
-# PAGE CONFIG
-# ============================================================
+APP_TITLE = "V12 Forward Dashboard"
+COLORS = {"V12": "#39D98A", "SPY": "#D4D4D8", "QQQ": "#818CF8"}
+
 
 st.set_page_config(
-    page_title="AI Stock Research",
-    page_icon="📈",
+    page_title=APP_TITLE,
+    page_icon="◈",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="auto",
 )
 
 
-# ============================================================
-# LIGHT UI POLISH — 不改功能，只讓介面更乾淨
-# ============================================================
-
-st.markdown(
-    """
-    <style>
-        .block-container {
-            max-width: 1380px;
-            padding-top: 2.2rem;
-            padding-bottom: 4rem;
-        }
-
-        [data-testid="stMetric"] {
-            background: rgba(255,255,255,0.025);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 14px;
-            padding: 14px 16px;
-        }
-
-        [data-testid="stMetricLabel"] {
-            opacity: 0.72;
-        }
-
-        div[data-testid="stTabs"] button {
-            font-size: 0.98rem;
-        }
-
-        .section-title {
-            font-size: 1.35rem;
-            font-weight: 650;
-            margin-top: 0.5rem;
-            margin-bottom: 0.25rem;
-        }
-
-        .muted {
-            color: rgba(255,255,255,0.58);
-            font-size: 0.9rem;
-        }
-
-        .hero-symbol {
-            font-size: 2.25rem;
-            font-weight: 750;
-            letter-spacing: -0.04em;
-            margin-bottom: 0;
-        }
-
-        .hero-company {
-            color: rgba(255,255,255,0.60);
-            margin-top: -0.25rem;
-        }
-
-        .disclaimer {
-            color: rgba(255,255,255,0.42);
-            font-size: 0.78rem;
-            margin-top: 1.5rem;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+def _ledger_path() -> Path:
+    configured = get_secret("V12_LEDGER_PATH")
+    return Path(configured) if configured else DEFAULT_LEDGER_PATH
 
 
-# ============================================================
-# HEADER
-# ============================================================
-
-st.markdown('<div class="hero-symbol">AI Stock Research</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="hero-company">Systematic research · AI analysis · quantitative backtesting</div>',
-    unsafe_allow_html=True,
-)
-st.markdown("")
-
-
-# ============================================================
-# SEARCH
-# ============================================================
-
-with st.container(border=True):
-    c1, c2 = st.columns([5, 1])
-    with c1:
-        symbol_input = st.text_input(
-            "Ticker",
-            placeholder="Enter a ticker, e.g. NVDA",
-            label_visibility="collapsed",
+def _dashboard_state() -> dict[str, Any]:
+    supabase_url = get_secret("SUPABASE_URL")
+    supabase_key = get_secret("SUPABASE_SECRET_KEY") or get_secret(
+        "SUPABASE_SERVICE_ROLE_KEY"
+    )
+    remote_source = get_secret("V12_DASHBOARD_SNAPSHOT_URL") or get_secret(
+        "V12_DASHBOARD_SNAPSHOT_PATH"
+    )
+    if not supabase_url and not supabase_key and not remote_source:
+        return build_dashboard_snapshot(_ledger_path())
+    try:
+        if bool(supabase_url) != bool(supabase_key):
+            raise DashboardSnapshotError("Supabase URL and secret key must both be configured")
+        if supabase_url and supabase_key:
+            return load_supabase_snapshot(
+                supabase_url,
+                supabase_key,
+                get_secret("V12_DASHBOARD_SYNC_SECRET") or "",
+                bucket=get_secret("V12_DASHBOARD_SUPABASE_BUCKET") or "v12-dashboard",
+                object_path=get_secret("V12_DASHBOARD_SUPABASE_OBJECT")
+                or "v12_dashboard.json",
+            )
+        return load_signed_snapshot(
+            remote_source,
+            get_secret("V12_DASHBOARD_SYNC_SECRET") or "",
         )
-    with c2:
-        analyze_clicked = st.button(
-            "Analyze",
-            use_container_width=True,
-            type="primary",
-        )
+    except DashboardSnapshotError as exc:
+        state = build_dashboard_snapshot(Path("__cloud_snapshot_unavailable__.sqlite3"))
+        state.update({
+            "health_status": "ERROR",
+            "health_label": "Sync Error",
+            "trading_blocked": True,
+            "integrity_error": str(exc),
+            "warnings": ["The cloud Dashboard snapshot could not be verified"],
+        })
+        return state
 
 
-# ============================================================
-# ANALYSIS FLOW
-# ============================================================
+@st.cache_data(ttl=1800, show_spinner=False)
+def _market_payload(symbol: str) -> dict[str, Any]:
+    return market_payload(symbol)
 
-if analyze_clicked:
-    if not symbol_input.strip():
-        st.warning("請先輸入股票代號。")
-        st.stop()
 
-    symbol = symbol_input.strip().upper()
+def _chart_layout(*, height: int) -> dict[str, Any]:
+    return {
+        "height": height,
+        "margin": {"l": 8, "r": 8, "t": 12, "b": 8},
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "#0d0d10",
+        "font": {"color": "#a1a1aa", "family": "Inter, Segoe UI, sans-serif"},
+        "hovermode": "x unified",
+        "hoverlabel": {"bgcolor": "#16161a", "bordercolor": "#27272a"},
+        "xaxis": {"gridcolor": "rgba(255,255,255,.055)", "zeroline": False},
+        "yaxis": {
+            "gridcolor": "rgba(255,255,255,.055)",
+            "zeroline": False,
+        },
+        "legend": {"orientation": "h", "y": 1.08},
+    }
 
-    with st.spinner(f"Loading {symbol} price data..."):
-        raw_data = get_daily_stock_data(symbol)
 
-    if "Time Series (Daily)" not in raw_data:
-        st.error("抓取股價資料失敗，請確認股票代號是否正確，或稍後再試。")
-        st.stop()
+def _rebalance_change_summary(trades: list[dict[str, Any]]) -> str:
+    exited = [row["ticker"] for row in trades if row["action"] == "SELL" and not row.get("is_trim")]
+    trimmed = [
+        f'{row["ticker"]} to {float(row.get("target_weight") or 0.0):.0%}'
+        for row in trades if row.get("is_trim")
+    ]
+    opened = [
+        f'{row["ticker"]} at {float(row.get("target_weight") or 0.0):.0%}'
+        for row in trades
+        if row["action"] == "BUY" and float(row.get("before_shares") or 0.0) <= 1e-9
+    ]
+    topped_up = [
+        f'{row["ticker"]} toward {float(row.get("target_weight") or 0.0):.0%}'
+        for row in trades
+        if row["action"] == "BUY" and float(row.get("before_shares") or 0.0) > 1e-9
+    ]
+    changes = []
+    if exited:
+        changes.append(f'exited {", ".join(exited)}')
+    if trimmed:
+        changes.append(f'trimmed {", ".join(trimmed)}')
+    if opened:
+        changes.append(f'opened {", ".join(opened)}')
+    if topped_up:
+        changes.append(f'topped up {", ".join(topped_up)}')
+    return "V12 " + "; ".join(changes) + "." if changes else "No allocation changes were required."
 
-    df = clean_stock_data(raw_data)
 
-    with st.spinner("Loading related news..."):
-        time.sleep(15)
-        news_list = get_news_sentiment(symbol, limit=20)
-
-    with st.spinner("Loading company fundamentals..."):
-        time.sleep(15)
-        overview = get_company_overview(symbol)
-
-    current_price = df["close"].iloc[-1]
-
-    with st.spinner("AI is analyzing the company..."):
-        report = generate_report(symbol, df, news_list, overview)
-
-    with st.spinner("Structuring the analysis..."):
-        structured = extract_structured_data(symbol, current_price, report)
-
-    saved_path = save_prediction(symbol, current_price, structured, report)
-
-    # ========================================================
-    # COMPANY HERO
-    # ========================================================
-
-    company_name = overview.get("公司名稱", symbol) if overview else symbol
-    industry = overview.get("產業別", "") if overview else ""
-
-    st.markdown("---")
-
-    h1, h2 = st.columns([3, 1])
-    with h1:
-        st.markdown(f'<div class="hero-symbol">{symbol}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="hero-company">{company_name} · {industry}</div>', unsafe_allow_html=True)
-    with h2:
-        st.metric("Latest Close", f"${current_price:,.2f}")
-
-    # ========================================================
-    # KPI STRIP
-    # ========================================================
-
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Market Cap", overview.get("市值", "N/A") if overview else "N/A")
-    k2.metric("P / E", overview.get("本益比", "N/A") if overview else "N/A")
-    k3.metric("EPS", overview.get("每股盈餘", "N/A") if overview else "N/A")
-    k4.metric("52W High", overview.get("52週最高價", "N/A") if overview else "N/A")
-    k5.metric("52W Low", overview.get("52週最低價", "N/A") if overview else "N/A")
-
+def render_overview() -> None:
+    _header("Portfolio", "Overview / Paper Trading", "Current paper portfolio, performance, and latest monthly rebalance.")
+    _paper_banner()
+    state = _dashboard_state()
+    latest_valuation = latest_curve_date(state)
+    if state["integrity_error"]:
+        st.error(f"Dashboard sync error: {state['integrity_error']}")
     st.caption(
-        f"Data: {len(df):,} price records · {len(news_list):,} news items · "
-        f"Saved prediction: {saved_path}"
+        f"Prices as of {latest_valuation or 'Unavailable'} · "
+        f"Last verified publication: {state.get('snapshot_generated_at') or state.get('last_event_created_at') or 'Unavailable'}"
     )
+    freshness, freshness_message = freshness_status(state)
+    if freshness != "CURRENT":
+        st.warning(freshness_message)
+    else:
+        st.caption(freshness_message)
+    if state.get("trading_blocked"):
+        st.error("Action required: dashboard data or execution needs attention. Open Strategy Health for details.")
+    else:
+        st.caption("Automation is operating normally. " + (
+            "Forward history is still too short to judge long-term performance."
+            if state.get("rolling_sharpe") is None else "Open Strategy Health to review performance monitoring."
+        ))
+    columns = st.columns(5)
+    columns[0].metric("Portfolio Value", _money(state["portfolio_value"]))
+    columns[1].metric("Cumulative Return", _pct(state["cumulative_return"]))
+    columns[2].metric("vs SPY", _pct(state["excess_vs_spy"], points=True))
+    columns[3].metric("vs QQQ", _pct(state["excess_vs_qqq"], points=True))
+    columns[4].metric("MDD", _pct(state["max_drawdown"]))
 
-    # ========================================================
-    # ONLY 3 MAIN AREAS
-    # ========================================================
+    st.markdown("### V12 vs SPY vs QQQ")
+    curve = state["curve"]
+    if state["formal_forward_rows"] == 0 or curve.empty:
+        st.markdown('<div class="empty-state"><h3>The first official Forward Signal has not been generated</h3><p>The Dashboard never presents backtest or illustrative values as Forward performance.</p></div>', unsafe_allow_html=True)
+    else:
+        figure = go.Figure()
+        for name in ("V12", "SPY", "QQQ"):
+            frame = curve[curve["series"].eq(name)].copy()
+            if frame.empty:
+                continue
+            figure.add_trace(go.Scatter(
+                x=pd.to_datetime(frame["date"]), y=frame["value"], name=name, mode="lines",
+                line={"color": COLORS[name], "width": 3 if name == "V12" else 2},
+                hovertemplate=f"<b>{name}</b><br>%{{x|%Y-%m-%d}}<br>$%{{y:,.2f}}<extra></extra>",
+            ))
+        layout = _chart_layout(height=420)
+        layout["yaxis"].update({"tickprefix": "$", "tickformat": ",.0f"})
+        figure.update_layout(**layout)
+        st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
 
-    tab_overview, tab_strategy, tab_research = st.tabs(
-        ["Overview", "Quant Strategy", "Research & Data"]
-    )
-
-    # ========================================================
-    # TAB 1 — OVERVIEW
-    # ========================================================
-
-    with tab_overview:
-        left, right = st.columns([1.55, 1])
-
-        with left:
-            st.markdown('<div class="section-title">Price & AI View</div>', unsafe_allow_html=True)
-            chart_data = df.set_index("date")[["close"]]
-            st.line_chart(chart_data, height=360)
-
-            with st.container(border=True):
-                st.markdown("#### AI Research Report")
-                st.markdown(report)
-
-        with right:
-            st.markdown('<div class="section-title">Recent News</div>', unsafe_allow_html=True)
-            st.caption("Showing the latest 5 items")
-
-            if news_list:
-                for n in news_list[:5]:
-                    with st.container(border=True):
-                        st.markdown(f"**{n['title']}**")
-                        st.caption(
-                            f"{n['time_published']} · {n['source']} · "
-                            f"{n['overall_sentiment_label']}"
-                        )
-            else:
-                st.info("目前沒有新聞資料。")
-
-            with st.expander("View all news"):
-                for n in news_list:
-                    st.markdown(f"**{n['title']}**")
-                    st.caption(
-                        f"{n['time_published']} · {n['source']} · "
-                        f"{n['overall_sentiment_label']}"
-                    )
-
-    # ========================================================
-    # TAB 2 — QUANT STRATEGY
-    # ========================================================
-
-    with tab_strategy:
-        st.markdown('<div class="section-title">Strategy V1</div>', unsafe_allow_html=True)
-        st.caption(
-            "MA200 trend filter + 6-month momentum + relative strength vs BTC. "
-            "Signals execute at the next day's open."
-        )
-
-        with st.spinner("Running quantitative backtest..."):
-            v1_stock_df = get_long_history_stock_data(symbol, period="2y")
-
-        if v1_stock_df.empty or len(v1_stock_df) < 200:
-            st.warning("歷史資料不足 200 天，無法計算 MA200。")
-        else:
-            crypto_df = clean_crypto_data(get_crypto_daily_data("BTC", "USD"))
-
-            v1_stock_df = add_trend_filter(v1_stock_df)
-            v1_stock_df = add_momentum(v1_stock_df)
-            v1_stock_df = add_relative_strength(v1_stock_df, crypto_df)
-            v1_stock_df = add_entry_exit_signals(v1_stock_df)
-
-            v1_result = run_backtest_v1(v1_stock_df)
-            bh_result = calculate_buy_and_hold(v1_stock_df)
-            v1_metrics = calculate_performance_metrics(
-                v1_result["trades"],
-                v1_result["initial_capital"],
-                v1_result["final_value"],
-                v1_stock_df,
-            )
-
-            # ------------------------
-            # Performance cards
-            # ------------------------
-            p1, p2, p3, p4 = st.columns(4)
-            p1.metric("Strategy Return", f"{v1_result['total_return_pct']}%")
-            p2.metric("Buy & Hold", f"{bh_result['total_return_pct']}%")
-            p3.metric("CAGR", f"{v1_metrics['cagr_pct']}%")
-            p4.metric("Win Rate", f"{v1_metrics['win_rate_pct']}%")
-
-            # ------------------------
-            # Main chart
-            # ------------------------
-            chart_df = v1_stock_df.set_index("date")[["close", "ma200"]]
-            st.line_chart(chart_df, height=420)
-
-            # ------------------------
-            # Signals / diagnostics
-            # ------------------------
-            with st.expander("Trade signals & diagnostics"):
-                signal_points = v1_stock_df[
-                    v1_stock_df["signal"].notna()
-                ][["date", "close", "signal", "execution_price"]]
-
-                if len(signal_points) > 0:
-                    st.dataframe(signal_points, use_container_width=True, hide_index=True)
-                else:
-                    st.info("這段期間沒有觸發訊號。")
-
-                if v1_metrics["completed_trades"]:
-                    diagnostics = build_trade_diagnostics(
-                        v1_stock_df,
-                        v1_metrics["completed_trades"],
-                    )
-                    diag_df = pd.DataFrame(diagnostics)
-                    st.dataframe(diag_df, use_container_width=True, hide_index=True)
-
-            # ------------------------
-            # Strategy versions
-            # ------------------------
-            st.markdown('<div class="section-title">Strategy Versions</div>', unsafe_allow_html=True)
-            st.caption("V1 vs fixed take-profit vs trailing exit vs Buy & Hold")
-
-            with st.spinner("Comparing strategy versions..."):
-                v1_eq_result = run_backtest_v1_with_equity_curve(v1_stock_df)
-                v1_eq_risk = calculate_risk_metrics(v1_eq_result["equity_curve"])
-                v1_eq_perf = calculate_performance_metrics(
-                    v1_eq_result["trades"],
-                    v1_eq_result["initial_capital"],
-                    v1_eq_result["final_value"],
-                    v1_stock_df,
-                )
-                row_v1 = build_comparison_row(
-                    symbol, "V1", v1_eq_result, v1_eq_risk, v1_eq_perf
-                )
-
-                tp_result = run_backtest_v1_with_takeprofit_v2(
-                    v1_stock_df,
-                    take_profit_pct=25.0,
-                )
-                tp_perf = calculate_performance_metrics(
-                    tp_result["trades"],
-                    tp_result["initial_capital"],
-                    tp_result["final_value"],
-                    v1_stock_df,
-                )
-                row_tp = build_comparison_row(
-                    symbol, "V1+TakeProfit25", tp_result, None, tp_perf
-                )
-
-                trail_result = run_backtest_v1_with_trailing_exit(
-                    v1_stock_df,
-                    trailing_pct=20.0,
-                )
-                trail_perf = calculate_performance_metrics(
-                    trail_result["trades"],
-                    trail_result["initial_capital"],
-                    trail_result["final_value"],
-                    v1_stock_df,
-                )
-                row_trail = build_comparison_row(
-                    symbol, "V1+Trailing20", trail_result, None, trail_perf
-                )
-
-                row_bh = build_comparison_row(
-                    symbol, "Buy&Hold", bh_result, None, None
-                )
-
-            comparison_df = pd.DataFrame(
-                [row_v1, row_tp, row_trail, row_bh]
-            )
-
-            def color_return(val):
-                if pd.isna(val):
-                    return ""
-                color = "#00D9A0" if val > 0 else "#FF4B4B"
-                return f"color: {color}; font-weight: bold"
-
-            styled_df = comparison_df.style.map(
-                color_return,
-                subset=["Return_pct", "CAGR_pct"],
-            )
-            st.dataframe(styled_df, use_container_width=True, hide_index=True)
-
-            # ------------------------
-            # Market regime
-            # ------------------------
-            with st.expander("Market regime"):
-                st.caption(
-                    "SPY + BTC 200-day trend → Risk-On / Risk-Off / Mixed"
-                )
-                with st.spinner("Analyzing market regime..."):
-                    regime_df = build_regime_series(period="2y")
-
-                regime_counts = regime_df["regime"].value_counts()
-                r1, r2, r3 = st.columns(3)
-                r1.metric("Risk-On", regime_counts.get("Risk-On", 0))
-                r2.metric("Risk-Off", regime_counts.get("Risk-Off", 0))
-                r3.metric("Mixed", regime_counts.get("Mixed", 0))
-
-            st.caption(
-                "⚠️ 回測僅供研究用途。過去績效不代表未來績效。"
-            )
-
-    # ========================================================
-    # TAB 3 — RESEARCH & DATA
-    # ========================================================
-
-    with tab_research:
-        left, right = st.columns(2)
-
-        with left:
-            with st.expander("Company fundamentals", expanded=True):
-                if overview:
-                    for key, value in overview.items():
-                        if key == "公司簡介":
-                            st.markdown(f"**{key}**")
-                            st.write(value)
-                        else:
-                            st.markdown(f"**{key}**：{value}")
-                else:
-                    st.write("未取得公司基本面資料。")
-
-        with right:
-            with st.expander("Structured AI data", expanded=True):
-                if structured:
-                    st.json(structured)
-                else:
-                    st.warning("未能解析結構化數據。")
-
-        with st.expander("Raw price data"):
-            st.dataframe(
-                df.sort_values("date", ascending=False),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        # ----------------------------------------------------
-        # Historical predictions
-        # ----------------------------------------------------
-        st.markdown('<div class="section-title">Prediction History</div>', unsafe_allow_html=True)
-        st.caption("查看過去 AI 預測，並在之後驗證結果。")
-
-        all_predictions = list_predictions()
-
-        if not all_predictions:
-            st.info("目前還沒有任何預測紀錄。")
-        else:
-            options = [
-                f"{r['ticker']} — {r['timestamp']}"
-                for r in all_predictions
-            ]
-            selected_index = st.selectbox(
-                "Prediction",
-                range(len(options)),
-                format_func=lambda i: options[i],
-                label_visibility="collapsed",
-            )
-
-            selected_record = all_predictions[selected_index]
-
-            a1, a2, a3, a4 = st.columns(4)
-            a1.metric(
-                "Price at Prediction",
-                f"${selected_record.get('current_price_at_prediction', 'N/A')}"
-            )
-            a2.metric(
-                "Bull",
-                f"{selected_record.get('bull_low', 'N/A')} ~ {selected_record.get('bull_high', 'N/A')}"
-            )
-            a3.metric(
-                "Base",
-                f"{selected_record.get('base_low', 'N/A')} ~ {selected_record.get('base_high', 'N/A')}"
-            )
-            a4.metric(
-                "Bear",
-                f"{selected_record.get('bear_low', 'N/A')} ~ {selected_record.get('bear_high', 'N/A')}"
-            )
-
-            if selected_record.get("outcome_checked"):
-                st.success("這筆預測已經驗證過結果")
-                st.write(
-                    f"驗證時間：{selected_record.get('checked_at')} · "
-                    f"實際報酬率：{selected_record.get('actual_return_pct')}% · "
-                    f"情境：{selected_record.get('which_scenario_occurred')}"
-                )
-            else:
-                st.info("這筆預測尚未驗證結果")
-                if st.button("Verify current price", type="secondary"):
-                    with st.spinner("Checking latest price..."):
-                        raw = get_daily_stock_data(selected_record["ticker"])
-                        if "Time Series (Daily)" in raw:
-                            latest_df = clean_stock_data(raw)
-                            actual_price = latest_df["close"].iloc[-1]
-                            updated = check_prediction_outcome(
-                                selected_record,
-                                actual_price,
-                            )
-                            st.success(
-                                f"驗證完成：${actual_price} · "
-                                f"{updated['which_scenario_occurred']}"
-                            )
-                            st.rerun()
-                        else:
-                            st.error("查詢目前股價失敗，請稍後再試。")
-
+    if state["holdings"]:
+        portfolio_value = f'{len(state["holdings"])} holdings'
+        lines = []
+        for position in state["holdings"]:
+            weight = position.get("target_weight")
+            weight_text = "—" if weight is None else f"{float(weight):.0%}"
+            lines.append(f'{html.escape(str(position.get("ticker") or "—"))} · {weight_text}')
+        portfolio_detail = f'{"<br>".join(lines)}<br>Cash · {_money(state["cash"])}'
+    else:
+        portfolio_value = "0 holdings"
+        portfolio_detail = "Waiting for the first official Forward allocation<br>Cash · —"
+    if state["latest_signal"] is None:
+        signal_value = "Not generated"
+        signal_detail = "Waiting for the official month-end signal<br>SPY Regime · —"
+    else:
+        signal_value = html.escape(state["signal_date"] or "—")
+        selections = " · ".join(f"{ticker} {weight:.0%}" for ticker, weight in state["target_weights"].items()) or "—"
+        signal_detail = f'SPY Regime · {html.escape(state["market_regime"] or "—")}<br>{html.escape(selections)}'
+    execution_value = html.escape(state["execution_status"])
+    execution_detail = f'Scheduled execution · {html.escape(state["execution_date"] or "—")}<br>Execution rule · T+1 Open'
     st.markdown(
-        '<div class="disclaimer">For education and research only. Not financial advice.</div>',
+        f'''
+        <div class="overview-card-grid">
+          <section class="overview-card"><div class="overview-card-kicker">PORTFOLIO</div><div class="overview-card-title">Current Holdings & Cash</div><div class="overview-card-value">{portfolio_value}</div><div class="overview-card-detail">{portfolio_detail}</div></section>
+          <section class="overview-card"><div class="overview-card-kicker">LATEST SIGNAL</div><div class="overview-card-title">Latest V12 Signal</div><div class="overview-card-value">{signal_value}</div><div class="overview-card-detail">{signal_detail}</div></section>
+          <section class="overview-card"><div class="overview-card-kicker">EXECUTION</div><div class="overview-card-title">T+1 Execution</div><div class="overview-card-value">{execution_value}</div><div class="overview-card-detail">{execution_detail}</div></section>
+        </div>
+        ''',
         unsafe_allow_html=True,
     )
+
+    st.markdown("### Why V12 Holds These Stocks")
+    st.caption(
+        "These explanations come from the immutable V7/V8 selections saved with the official signal. AI does not decide the allocation."
+    )
+    selection_cards(selection_rows(state))
+
+    if state.get("holdings"):
+        st.markdown("### Portfolio P/L & Contribution")
+        pnl_metrics = st.columns(4)
+        pnl_metrics[0].metric("Realized P/L", _signed_money(state.get("realized_pnl")))
+        pnl_metrics[1].metric("Unrealized P/L", _signed_money(state.get("unrealized_pnl")))
+        pnl_metrics[2].metric(
+            "Cumulative Trading Costs",
+            _money(state.get("cumulative_transaction_costs")),
+        )
+        pnl_metrics[3].metric(
+            "Latest Valuation",
+            latest_valuation or "—",
+        )
+        if any(
+            state.get(field) is None
+            for field in (
+                "realized_pnl",
+                "unrealized_pnl",
+                "cumulative_transaction_costs",
+            )
+        ):
+            st.caption(
+                "Detailed position P/L will populate after the next signed cloud "
+                "valuation snapshot. Missing values are not estimated."
+            )
+        holding_rows = []
+        for position in state["holdings"]:
+            holding_rows.append({
+                "Ticker": position["ticker"],
+                "Shares": position.get("shares"),
+                "Average Cost": position.get("average_cost"),
+                "Latest Price": position.get("mark"),
+                "Current Weight": position.get("current_weight"),
+                "Target Weight": position.get("target_weight"),
+                "Market Value": position.get("market_value"),
+                "Unrealized P/L": position.get("unrealized_pnl"),
+            })
+        st.dataframe(
+            pd.DataFrame(holding_rows),
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Shares": st.column_config.NumberColumn("Shares", format="%.4f"),
+                "Average Cost": st.column_config.NumberColumn("Average Cost", format="$%.2f"),
+                "Latest Price": st.column_config.NumberColumn("Latest Price", format="$%.2f"),
+                "Current Weight": st.column_config.ProgressColumn(
+                    "Current Weight", min_value=0.0, max_value=1.0, format="percent"
+                ),
+                "Target Weight": st.column_config.NumberColumn(
+                    "Target", format="percent"
+                ),
+                "Market Value": st.column_config.NumberColumn(
+                    "Market Value", format="$%.2f"
+                ),
+                "Unrealized P/L": st.column_config.NumberColumn(
+                    "Unrealized P/L", format="$%.2f"
+                ),
+            },
+        )
+
+    st.markdown("### Latest Rebalance")
+    latest_trades = state.get("latest_trades") or []
+    if latest_trades:
+        execution_date = latest_trades[0].get("execution_date") or state.get("execution_date") or "—"
+        st.caption(f"Executed {execution_date} · T+1 market open")
+        st.info(_rebalance_change_summary(latest_trades))
+        trade_metrics = st.columns(4)
+        trade_metrics[0].metric("Bought", _money(state.get("latest_buy_value")))
+        trade_metrics[1].metric("Sold", _money(state.get("latest_sell_value")))
+        costs = state.get("latest_transaction_costs")
+        if costs is None:
+            costs = state.get("latest_trade_fees")
+        trade_metrics[2].metric("Trading Costs", _money(costs))
+        turnover = state.get("latest_turnover")
+        trade_metrics[3].metric("Portfolio Changed", "—" if turnover is None else f"{float(turnover):.1%}")
+        st.caption("Open Activity for share quantities, fill prices, costs, realized P/L, and immutable event history.")
+        next_signal = state.get("next_signal_date")
+        next_execution = state.get("next_execution_date")
+        if next_signal and next_execution:
+            st.caption(f"Next expected cycle · Signal after {next_signal} close → simulated execution at {next_execution} open")
+    elif state["latest_signal"] is not None and state["execution_status"] != "Executed":
+        st.info("The latest signal is waiting for execution. Trade details will appear here after the T+1 open.")
+    elif state["latest_signal"] is not None:
+        st.info("No trades were required because the portfolio already matched the latest target weights.")
+
+    st.markdown("### Automation Timeline")
+    next_signal = state.get("next_signal_date") or "Waiting"
+    next_execution = state.get("next_execution_date") or "Waiting"
+    timeline([
+        ("Latest signal", state.get("signal_date") or "Not generated"),
+        (
+            "T+1 execution",
+            f'{state.get("execution_status") or "—"} · {state.get("execution_date") or "—"}',
+        ),
+        ("Latest valuation", latest_valuation or "Waiting"),
+        ("Next cycle", f"{next_signal} close → {next_execution} open"),
+    ])
+
+
+def render_activity() -> None:
+    _header(
+        "Execution",
+        "Trading Activity",
+        "Actual paper orders, fills, costs, and immutable system events from the signed dashboard snapshot.",
+    )
+    _paper_banner()
+    state = _dashboard_state()
+    if state.get("integrity_error"):
+        st.error(f"Dashboard sync error: {state['integrity_error']}")
+
+    latest_trades = list(state.get("latest_trades") or [])
+    st.markdown("### Latest Rebalance")
+    if not latest_trades:
+        if state.get("latest_signal") is not None and state.get("execution_status") == "Executed":
+            st.markdown(
+                '<div class="empty-state"><h3>No trades were required</h3>'
+                '<p>The portfolio already matched the latest official target weights.</p></div>',
+                unsafe_allow_html=True,
+            )
+        elif state.get("latest_signal") is not None:
+            st.markdown(
+                '<div class="empty-state"><h3>Execution is pending</h3>'
+                '<p>Trade details will appear after the official T+1 market-open cycle.</p></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="empty-state"><h3>No official trading activity yet</h3>'
+                '<p>The first immutable Forward signal and execution have not been generated.</p></div>',
+                unsafe_allow_html=True,
+            )
+    else:
+        execution_date = latest_trades[0].get("execution_date") or state.get("execution_date") or "—"
+        st.caption(f"Executed {execution_date} · T+1 market open · Signed read-only evidence")
+        st.info(_rebalance_change_summary(latest_trades))
+
+        trade_metrics = st.columns(4)
+        trade_metrics[0].metric("Bought", _money(state.get("latest_buy_value")))
+        trade_metrics[1].metric("Sold", _money(state.get("latest_sell_value")))
+        costs = state.get("latest_transaction_costs")
+        if costs is None:
+            costs = state.get("latest_trade_fees")
+        trade_metrics[2].metric("Trading Costs", _money(costs))
+        turnover = state.get("latest_turnover")
+        trade_metrics[3].metric(
+            "Portfolio Changed",
+            "—" if turnover is None else f"{float(turnover):.1%}",
+        )
+
+        filter_columns = st.columns(2)
+        with filter_columns[0]:
+            action_filter = st.selectbox(
+                "Action",
+                ["All actions"] + sorted({str(row.get("action") or "—") for row in latest_trades}),
+            )
+        with filter_columns[1]:
+            ticker_filter = st.selectbox(
+                "Ticker",
+                ["All tickers"] + sorted({str(row.get("ticker") or "—") for row in latest_trades}),
+            )
+        filtered_trades = [
+            row for row in latest_trades
+            if (action_filter == "All actions" or row.get("action") == action_filter)
+            and (ticker_filter == "All tickers" or row.get("ticker") == ticker_filter)
+        ]
+        st.dataframe(
+            pd.DataFrame(trade_activity_rows(filtered_trades, state)),
+            width="stretch",
+            hide_index=True,
+        )
+        st.caption(
+            "Realized P/L is shown only for sales and includes commission. "
+            "Portfolio Changed is the larger of purchases or sales relative to execution-day value."
+        )
+
+        with st.expander("Execution audit details"):
+            audit_rows = [{
+                "Side": "SELL · TRIM" if trade.get("is_trim") else trade["action"],
+                "Ticker": trade["ticker"],
+                "Before": f'{float(trade.get("before_shares") or 0.0):,.4f}',
+                "Change": f'{float(trade["shares"]) if trade["action"] == "BUY" else -float(trade["shares"]):+,.4f}',
+                "After": f'{float(trade.get("after_shares") or 0.0):,.4f}',
+                "Fill Price": _money(trade["fill_price"]),
+                "Trade Value": _money(trade["trade_value"]),
+                "Commission": _money(trade["fee"]),
+                "Slippage": _money(trade.get("slippage_cost")),
+            } for trade in filtered_trades]
+            st.dataframe(pd.DataFrame(audit_rows), width="stretch", hide_index=True)
+            st.caption(
+                "SELL · TRIM means the stock remained selected and only the amount above its target weight was sold."
+            )
+
+    st.markdown("### Recent System Events")
+    st.markdown(
+        '<div class="section-note">Newest first. This is a display projection of append-only ledger events; the Dashboard cannot edit them.</div>',
+        unsafe_allow_html=True,
+    )
+    event_rows = activity_event_rows(state)
+    if event_rows:
+        event_types = sorted({row["Event"] for row in event_rows})
+        event_filter = st.selectbox(
+            "Event type",
+            ["All events"] + event_types,
+            key="activity_event_filter",
+        )
+        filtered_events = [
+            row for row in event_rows
+            if event_filter == "All events" or row["Event"] == event_filter
+        ]
+        st.dataframe(pd.DataFrame(filtered_events), width="stretch", hide_index=True)
+    else:
+        st.info("No verified ledger events are available in the current snapshot.")
+
+
+def render_market() -> None:
+    _header("Market Intelligence", "Market Intelligence", "Prices, earnings, material news, and company filings in one concise view.")
+    search, action = st.columns([5, 1])
+    with search:
+        symbol = st.text_input("Ticker", value=st.session_state.get("market_symbol", ""), placeholder="For example: AAPL or NVDA", label_visibility="collapsed").strip().upper()
+    with action:
+        clicked = st.button("Search", type="primary", width="stretch")
+    if clicked:
+        if not valid_symbol(symbol):
+            st.warning("Enter a valid ticker, for example NVDA, AAPL or BRK-B.")
+            return
+        st.session_state["market_symbol"] = symbol
+    symbol = st.session_state.get("market_symbol", "")
+    if not symbol:
+        st.info("Enter a ticker and select Search. Opening this page does not automatically call external data or AI APIs.")
+        return
+
+    with st.spinner(f"Loading market data for {symbol}…"):
+        payload = _market_payload(symbol)
+    prices = payload["prices"]
+    if prices.empty:
+        st.warning("Prices are temporarily unavailable. Other available company information is shown below.")
+    overview = payload["overview"] or {}
+    current = float(prices["close"].iloc[-1]) if not prices.empty else None
+    previous = float(prices["close"].iloc[-2]) if len(prices) > 1 else current
+    daily_change = current / previous - 1 if current is not None and previous else None
+    company = overview.get("公司名稱") or symbol
+    st.markdown(f"### {html.escape(symbol)} · {html.escape(str(company))}")
+    price_col, meta_col = st.columns([1, 2])
+    price_col.metric("Latest Close", _money(current), f"{daily_change:+.2%}" if daily_change is not None else None)
+    meta_col.caption(f"Price source: {payload['source']} · As of {prices['date'].iloc[-1] if not prices.empty else 'Unavailable'} · Delayed data")
+    st.caption(f"Fundamentals: {payload['fundamentals_source']} · News: {payload['news_source']} · Fetched: {payload['fetched_at']}")
+    issues = [row for row in payload['provider_status'] if row['Status'] not in {'Available','No data'}]
+    for row in issues:
+        st.caption(f"{row['Provider']} / {row['Data']}: {row['Status']}. Available backup results are shown where possible.")
+    with st.expander("Data coverage & providers"):
+        st.dataframe(
+            pd.DataFrame(payload["provider_status"]),
+            width="stretch",
+            hide_index=True,
+        )
+        st.caption("Unavailable sections do not affect Frozen V12. They only limit the Market Intelligence view.")
+
+    if not prices.empty:
+        figure = go.Figure(go.Scatter(
+            x=pd.to_datetime(prices["date"]), y=prices["close"], mode="lines",
+            line={"color": COLORS["V12"], "width": 2.5}, fill="tozeroy", fillcolor="rgba(57,217,138,.045)",
+            hovertemplate="%{x|%Y-%m-%d}<br>$%{y:,.2f}<extra></extra>",
+        ))
+        layout = _chart_layout(height=330)
+        layout["yaxis"].update({"tickprefix": "$"})
+        figure.update_layout(**layout)
+        st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
+
+    st.markdown("### Earnings & Fundamentals")
+    metrics = st.columns(5)
+    metrics[0].metric("Market Cap", _number(overview.get("市值"), currency=True))
+    metrics[1].metric("P/E", _number(overview.get("本益比")))
+    metrics[2].metric("EPS", _number(overview.get("每股盈餘"), currency=True))
+    metrics[3].metric("Gross Margin", "—" if overview.get("毛利率") is None else f"{overview['毛利率']:.2f}%")
+    try:
+        operating_margin = float(overview["營業利益率"])
+    except (KeyError, TypeError, ValueError):
+        operating_margin = None
+    metrics[4].metric("Operating Margin", _pct(operating_margin))
+    if payload["earnings"]:
+        with st.expander("Recent / Scheduled Earnings", expanded=True):
+            st.dataframe(pd.DataFrame(payload["earnings"]).rename(columns={"date": "Date", "estimate": "EPS Estimate", "reported": "Reported EPS", "surprise": "Surprise"}), width="stretch", hide_index=True)
+    else:
+        st.caption("No earnings-date rows were returned. This does not mean the company has no earnings reports.")
+    if not overview:
+        st.warning("Fundamentals are unavailable from the current providers; missing values are not zero.")
+
+    news_col, filing_col = st.columns(2)
+    with news_col:
+        st.markdown("### Latest News")
+        st.caption("Ticker-related coverage, not verified material events. Google News backup results are search matches; check the publisher and publication date.")
+        if payload["news"]:
+            for item in payload["news"][:5]:
+                title = html.escape(str(item.get("title") or "Untitled"))
+                url = html.escape(str(item.get("url") or ""), quote=True)
+                link = f'<a href="{url}" target="_blank">{title}</a>' if url else title
+                meta = " · ".join(filter(None, [str(item.get("source") or ""), str(item.get("time_published") or "")]))
+                st.markdown(f'<div class="event-card">{link}<div class="event-meta">{html.escape(meta)}</div></div>', unsafe_allow_html=True)
+        else:
+            st.info("No news was returned by the available providers. Check Data coverage & providers for access or connection issues.")
+    with filing_col:
+        st.markdown("### SEC / Company Filings")
+        if payload["filings"]:
+            for item in payload["filings"][:5]:
+                title = f"{item['type']} · {item['title']}"
+                url = html.escape(item.get("url", ""), quote=True)
+                link = f'<a href="{url}" target="_blank">{html.escape(title)}</a>' if url else html.escape(title)
+                st.markdown(f'<div class="event-card">{link}<div class="event-meta">{html.escape(item["date"])}</div></div>', unsafe_allow_html=True)
+        else:
+            st.info("Yahoo Finance did not return any available SEC or company filings.")
+
+    st.markdown("### AI Key Takeaways")
+    st.caption("AI summarizes only the displayed prices, fundamentals, and news. It does not provide price targets or trading instructions.")
+    provider = compact_ai_provider()
+    if provider:
+        st.caption(f"Summary provider: {provider}")
+    summary_key = f"compact_summary_{symbol}"
+    if summary_key in st.session_state:
+        st.markdown(st.session_state[summary_key])
+    if st.button("Generate 3–5 Takeaways", key=f"summary_button_{symbol}"):
+        if not has_compact_ai_key():
+            st.warning("GEMINI_API_KEY or ANTHROPIC_API_KEY is not configured, so an AI summary cannot be generated.")
+        else:
+            try:
+                with st.spinner("Preparing key takeaways…"):
+                    summary = generate_compact_summary(symbol, prices, payload["news"], overview)
+                st.session_state[summary_key] = summary
+                st.rerun()
+            except Exception as exc:
+                st.error(f"AI summary is temporarily unavailable: {exc}")
+
+
+def render_strategy_health() -> None:
+    _header(
+        "Strategy Health",
+        "Strategy & System Health",
+        "Understand whether automation is safe, what V12 is doing now, and whether Forward results are becoming unusual.",
+    )
+    _paper_banner()
+    state = _dashboard_state()
+
+    st.markdown("### What can you learn here?")
+    freshness, freshness_message = freshness_status(state)
+    if freshness != "CURRENT":
+        st.warning(freshness_message)
+    posture = "INVESTED" if state.get("market_regime") == "BULL" and state.get("target_weights") else "CASH / WAITING"
+    maturity = "BUILDING SAMPLE" if state.get("rolling_sharpe") is None else state["health_label"].upper()
+    st.markdown(
+        f'''
+        <div class="health-strip">
+          <section class="health-cell">
+            <div class="health-label">System</div>
+            <div class="health-value">{"BLOCKED" if state["trading_blocked"] else "READY"}</div>
+            <div class="health-copy">Can the next automated cycle safely continue?</div>
+          </section>
+          <section class="health-cell">
+            <div class="health-label">Strategy</div>
+            <div class="health-value">{html.escape(posture)}</div>
+            <div class="health-copy">Is Frozen V12 invested or protected in cash?</div>
+          </section>
+          <section class="health-cell">
+            <div class="health-label">Evidence</div>
+            <div class="health-value">{html.escape(maturity)}</div>
+            <div class="health-copy">Is there enough official Forward history to judge performance?</div>
+          </section>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("### Current interpretation")
+    if state["trading_blocked"]:
+        st.error("Trading is blocked by the system: " + (state["integrity_error"] or state["execution_status"]))
+    else:
+        allocation = " · ".join(
+            f"{ticker} {float(weight):.0%}"
+            for ticker, weight in (state.get("target_weights") or {}).items()
+        ) or "Cash / no allocation"
+        st.success(
+            f"No operational action is required. Latest signal: {state.get('signal_date') or '—'}; "
+            f"execution: {state.get('execution_status') or '—'}; allocation: {allocation}."
+        )
+    for warning in state.get("warnings") or []:
+        st.warning(f"Research watch only — {warning}. This does not change or stop Frozen V12.")
+
+    st.markdown("### Automation pipeline")
+    sync_time = state.get("snapshot_generated_at") or state.get("last_event_created_at") or "—"
+    timeline([
+        ("Data", state.get("last_data_asof") or "Waiting"),
+        ("Signal", state.get("signal_date") or "Not generated"),
+        ("Execution", state.get("execution_status") or "—"),
+        ("Dashboard sync", sync_time),
+    ])
+
+    st.markdown("### System safety checks")
+    st.caption("These checks answer whether the displayed records and the next automated cycle can be trusted.")
+    operational_metrics = st.columns(4)
+    operational_metrics[0].metric("V12 Status", "FROZEN")
+    operational_metrics[1].metric("Ledger", "Verified" if state.get("ledger_verified") else "Unavailable")
+    operational_metrics[2].metric("T+1 Execution", state["execution_status"])
+    operational_metrics[3].metric(
+        "Cloud Snapshot",
+        "Verified" if state.get("snapshot_generated_at") else "Local read",
+    )
+    source_commit = str(state.get("source_commit") or "")
+    source_text = source_commit[:8] if source_commit else "local checkout"
+    st.caption(
+        f'Data as of {state.get("last_data_asof") or "—"} · '
+        f'{int(state.get("ledger_event_count") or 0)} verified ledger events · '
+        f'Source {source_text}'
+    )
+
+    with st.expander("What would block trading?"):
+        st.write("- Ledger hash, schema, or signed snapshot verification failure")
+        st.write("- A signal exists without orders, or its T+1 execution is overdue")
+        st.write("- Incomplete prices, timestamp errors, or failed accounting reconciliation")
+
+    st.markdown("### Strategy evidence")
+    st.caption("This section asks whether live paper results still resemble the behavior expected from the frozen research. It never changes the strategy automatically.")
+    evidence = st.columns(4)
+    evidence[0].metric("SPY Regime", state["market_regime"] or "—")
+    agreement = "—" if state["agreement_count"] is None else f"{state['agreement_count']} overlapping"
+    evidence[1].metric("V7 / V8 agreement", agreement)
+    evidence[2].metric("Forward Drawdown", _pct(state["max_drawdown"]))
+    evidence[3].metric("Official Allocation Batches", str(state["formal_forward_rows"]))
+
+    second = st.columns(4)
+    second[0].metric("12M Rolling Sharpe", "Waiting" if state["rolling_sharpe"] is None else f"{state['rolling_sharpe']:.2f}")
+    second[1].metric("Forward vs Backtest", "Waiting" if state["sharpe_deviation"] is None else f"{state['sharpe_deviation']:+.2f} Sharpe")
+    second[2].metric("T+1 Return", _pct(state["t1_return"]))
+    second[3].metric("T+2 / Difference", "—" if state["t2_return"] is None else f"{_pct(state['t2_return'])} / {_pct(state['t1_t2_spread'], points=True)}")
+
+    with st.expander("How to read these strategy metrics", expanded=True):
+        st.markdown(
+            """
+            - **SPY Regime:** `BULL` permits stock exposure; an unfavorable regime moves V12 to cash according to the frozen rule.
+            - **V7 / V8 agreement:** shows whether the two frozen ranking components selected the same stocks. Agreement explains the final weights; it is not a probability of profit.
+            - **Forward Drawdown:** the decline from the highest official paper value. At **−20%**, research review begins, but the strategy is not automatically altered.
+            - **12M Rolling Sharpe:** return earned per unit of volatility over 252 official daily observations. `Waiting` means the sample is still too small—not that the strategy failed.
+            - **Forward vs Backtest:** compares Forward Sharpe with the frozen historical reference only after enough Forward data exists.
+            - **T+1 vs T+2:** shows how sensitive results are to executing one day later. A large persistent gap may reveal execution fragility.
+            """
+        )
+    st.caption(f"Historical reference only · Frozen V12 Sharpe {HISTORICAL_SHARPE:.2f}. Backtest results are never mixed into official Forward returns.")
+    st.info("Use this page to detect operational failures or persistent strategy deterioration—not to create discretionary buy/sell signals. Weak short-term performance can warn you, but it cannot modify Frozen V12.")
+
+
+def main() -> None:
+    _inject_style()
+    with st.sidebar:
+        st.markdown(
+            '<div class="brand-kicker">FORWARD RESEARCH</div>'
+            '<div class="brand-title">V12 Dashboard</div>'
+            '<div class="brand-meta">Frozen strategy<br>Read-only interface</div>',
+            unsafe_allow_html=True,
+        )
+        st.divider()
+    navigation = st.navigation([
+        st.Page(render_overview, title="Overview", default=True),
+        st.Page(render_activity, title="Activity"),
+        st.Page(render_market, title="Market Intelligence"),
+        st.Page(render_strategy_health, title="Strategy Health"),
+        st.Page(render_v3_dashboard, title="V3 Accounting"),
+    ])
+    navigation.run()
+    st.markdown('<div class="footer-note">For education and research only. Paper trading is not a real execution, and past performance does not predict future results.</div>', unsafe_allow_html=True)
+
+
+if __name__ == "__main__":
+    main()
