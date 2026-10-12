@@ -483,7 +483,11 @@ def render_market() -> None:
     st.markdown(f"### {html.escape(symbol)} · {html.escape(str(company))}")
     price_col, meta_col = st.columns([1, 2])
     price_col.metric("Latest Close", _money(current), f"{daily_change:+.2%}" if daily_change is not None else None)
-    meta_col.caption(f"Price source: {payload['source']} · As of {prices['date'].iloc[-1] if not prices.empty else 'Unavailable'} · Delayed data")
+    meta_col.caption(f"Price source: {payload['source']} · As of {prices['date'].iloc[-1] if not prices.empty else 'Unavailable'} · Daily close, not live")
+    if not prices.empty:
+        meta_col.caption("Provider daily Close, not a total-return series. Historical split conventions may differ between providers.")
+        if (pd.Timestamp.now(tz='America/New_York').date() - pd.Timestamp(prices['date'].iloc[-1]).date()).days > 4:
+            st.warning("The latest available price is more than four calendar days old. Check the source status before relying on it.")
     st.caption(f"Fundamentals: {payload['fundamentals_source']} · News: {payload['news_source']} · Fetched: {payload['fetched_at']}")
     issues = [row for row in payload['provider_status'] if row['Status'] not in {'Available','No data'}]
     if issues:
@@ -514,15 +518,32 @@ def render_market() -> None:
 
     st.markdown("### Earnings & Fundamentals")
     metrics = st.columns(5)
-    metrics[0].metric("Market Cap", _number(overview.get("市值"), currency=True))
-    metrics[1].metric("P/E", _number(overview.get("本益比")))
-    metrics[2].metric("EPS (provider TTM)", _number(overview.get("每股盈餘"), currency=True))
-    metrics[3].metric("Gross Margin", "—" if overview.get("毛利率") is None else f"{overview['毛利率']:.2f}%")
-    try:
-        operating_margin = float(overview["營業利益率"])
-    except (KeyError, TypeError, ValueError):
-        operating_margin = None
-    metrics[4].metric("Operating Margin", _pct(operating_margin))
+    reported = {row['Metric']: row for row in payload.get('reported_financials', [])}
+    has_valuation = any(overview.get(key) is not None for key in ('市值', '本益比', '每股盈餘', '毛利率', '營業利益率'))
+    if not has_valuation and reported:
+        st.caption("SEC reported figures are shown instead of unavailable valuation metrics. These are not TTM values; each card identifies its reporting period.")
+        for column, label in zip(metrics, ('Revenue', 'Net income', 'Diluted EPS', 'Assets', 'Liabilities')):
+            row = reported.get(label, {})
+            column.metric(label, _number(row.get('Value'), currency=True),
+                          help="SEC reported USD per share" if label == 'Diluted EPS' else "SEC reported USD")
+            if row:
+                start = row.get('Period start', 'Instant')
+                period = row.get('Period end', 'Unknown')
+                column.caption(f"{start} → {period}" if start != 'Instant' else f"As of {period}")
+        with st.expander("Why are Market Cap, P/E and TTM margins unavailable?"):
+            st.caption("The valuation provider did not return these metrics. SEC statements are not a substitute for current market capitalization or TTM P/E. No estimates are invented.")
+    else:
+        metrics[0].metric("Market Cap", _number(overview.get("市值"), currency=True))
+        metrics[1].metric("P/E", _number(overview.get("本益比")))
+        metrics[2].metric("EPS (provider TTM)", _number(overview.get("每股盈餘"), currency=True))
+        metrics[3].metric("Gross Margin", "—" if overview.get("毛利率") is None else f"{overview['毛利率']:.2f}%")
+        try:
+            operating_margin = float(overview["營業利益率"])
+        except (KeyError, TypeError, ValueError):
+            operating_margin = None
+        metrics[4].metric("Operating Margin", _pct(operating_margin))
+        if not has_valuation:
+            st.info("Neither valuation metrics nor SEC financial figures are available. Missing values are not zero; see provider status above.")
     if payload["earnings"]:
         with st.expander("Recent / Scheduled Earnings", expanded=True):
             st.dataframe(pd.DataFrame(payload["earnings"]).rename(columns={"date": "Date", "estimate": "EPS Estimate", "reported": "Reported EPS", "surprise": "Surprise"}), width="stretch", hide_index=True)

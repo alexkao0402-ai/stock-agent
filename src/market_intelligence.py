@@ -11,7 +11,8 @@ import requests
 import yfinance as yf
 
 from src.config import get_secret
-from src.stock_data import get_long_history_stock_data, _request_json, DataProviderError
+from src.stock_data import _request_json, DataProviderError
+from src.market_prices import market_prices
 from src.sec_research import sec_context
 from src.research_cache import ResearchCache
 
@@ -181,7 +182,8 @@ def market_payload(symbol):
             statuses.append({'Data':section,'Provider':provider,'Status':_failure(exc)})
             return empty
 
-    prices = fetch('Prices','Yahoo Finance',lambda:get_long_history_stock_data(symbol, period='1y').tail(180).reset_index(drop=True),pd.DataFrame())
+    prices, price_source, price_status = market_prices(symbol, cache)
+    statuses.extend(price_status)
     ticker = yf.Ticker(symbol)
     overview = fetch('Fundamentals','Yahoo Finance',lambda:yahoo_overview(ticker.get_info()),{})
     fundamentals_source = 'Yahoo Finance' if overview else 'Unavailable'
@@ -234,7 +236,7 @@ def market_payload(symbol):
     news = relevant_news(news, symbol, company)
     filings = sec.get('filings') or fetch('SEC / company filings','Yahoo Finance',lambda:normalize_filings(ticker.get_sec_filings()),[])
     return {'prices':prices, 'overview':overview, 'news':news, 'earnings':earnings_rows,
-            'filings':filings,'source':'Yahoo Finance', 'fundamentals_source':fundamentals_source,
+            'filings':filings,'source':price_source, 'fundamentals_source':fundamentals_source,
             'news_source':news_source if news else 'Unavailable','provider_status':statuses,
             'reported_financials': sec.get('financials', []), 'cache_status': cache.metadata,
             'fetched_at':datetime.now(timezone.utc).isoformat()}

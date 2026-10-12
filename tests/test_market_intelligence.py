@@ -19,7 +19,7 @@ class MarketIntelligenceTests(unittest.TestCase):
         self.ticker.get_earnings_dates.return_value = None
         self.ticker.get_sec_filings.return_value = []
         self.patchers = [patch('src.market_intelligence.yf.Ticker',return_value=self.ticker),
-                         patch('src.market_intelligence.get_long_history_stock_data',return_value=pd.DataFrame()),
+                         patch('src.market_intelligence.market_prices',return_value=(pd.DataFrame(), 'Unavailable', [])),
                          patch('src.market_intelligence.get_secret',return_value=None),
                          patch('src.market_intelligence.sec_context',return_value={'status':'SEC_USER_AGENT not configured'}),
                          patch('src.market_intelligence.ResearchCache',side_effect=lambda: ResearchCache(directory.name)),
@@ -112,6 +112,11 @@ class MarketPageTests(unittest.TestCase):
         self.assertTrue(any('SEC Reported Financials' in item.value for item in at.markdown))
         self.assertTrue(any('previous successful download' in item.value for item in at.warning))
         self.assertFalse(any('Rate limited' in item.value for item in at.caption))
+        labels = [item.label for item in at.metric]
+        self.assertIn('Revenue', labels)
+        self.assertIn('Diluted EPS', labels)
+        self.assertNotIn('Market Cap', labels)
+        self.assertTrue(any('not TTM' in item.value for item in at.caption))
 
     def test_no_prices_does_not_hide_other_sections(self):
         from streamlit.testing.v1 import AppTest

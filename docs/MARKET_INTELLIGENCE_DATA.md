@@ -3,13 +3,38 @@
 This display-only layer is not a signal, pricing, accounting, or readiness input
 for Frozen V12 or V3. It does not modify those engines or enable scheduling.
 
-Delayed prices and optional valuation/earnings-date data still use the pinned
+Daily prices and optional valuation/earnings-date data still use the pinned
 Yahoo Finance dependency. Alpha Vantage remains an optional last-resort source
 for fundamentals/news, with zero immediate retries. Missing numeric values are
 not converted to zero, and raw provider exceptions/API keys are not displayed.
 Free services are best-effort and may rate-limit cloud hosts. Respect provider
-terms; this view is not a licensed redistribution feed. Price disk cache may
-last 20 hours; the price date, not the page fetch time, identifies its freshness.
+terms; this view is not a licensed redistribution feed. The price date, not the
+page fetch time, identifies its freshness.
+
+## Daily-price fallback and summary cards
+
+Market Intelligence uses a separate daily-price reader, not the strategy's
+adjusted history cache. Yahoo `history(auto_adjust=False, raise_errors=True)`
+preserves explicit failure status. If it fails, the existing Alpha Vantage key
+can request `TIME_SERIES_DAILY` with compact output (up to 100 rows) and zero
+immediate retries. Response symbols are checked. Access still depends on the
+key's entitlements and quota; neither source is guaranteed available on Cloud.
+Successful Yahoo daily data is cached one hour, Alpha daily data six hours to
+conserve quota. A fresh alternate source is preferred over a stale success.
+
+The view conservatively excludes today's daily bar until 16:15 New York time;
+this is intended for US-market securities, not global exchange session handling.
+Invalid/nonpositive/nonfinite closes and future dates are rejected. These are
+provider Close series, not total returns or approved Forward inputs. Yahoo and
+Alpha may use different historical split conventions, so series are never
+spliced together. A stale backup remains labeled with its real date; a price more
+than four calendar days old also triggers a warning (not an exchange-calendar
+assertion).
+
+When all valuation metrics are unavailable but SEC figures exist, the summary
+cards show Revenue, Net income, Diluted EPS, Assets and Liabilities with their
+reporting periods. They do not masquerade as market capitalization, P/E, margins,
+or TTM EPS. The detailed SEC financial table remains available underneath.
 
 ## Configuration
 
