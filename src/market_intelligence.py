@@ -12,6 +12,8 @@ import yfinance as yf
 
 from src.config import get_secret
 from src.stock_data import get_long_history_stock_data, _request_json, DataProviderError
+from src.sec_research import sec_context
+from src.research_cache import ResearchCache
 
 
 def valid_symbol(symbol):
@@ -85,9 +87,55 @@ def normalize_news(items):
     return rows
 
 
+def relevant_news(items, symbol, company=None, now=None):
+    """Conservative headline matching, not verification of the publisher's claims."""
+    now = now or datetime.now(timezone.utc)
+    # Only a verified provider company name may supply aliases. Do not invent a name from a ticker.
+    name = re.sub(r'\b(incorporated|corporation|company|limited|inc|corp|ltd|plc)\b\.?', '', company or '', flags=re.I)
+    name = re.sub(r'\s+', ' ', name).strip(' ,.-')
+    aliases = [name] if len(name) >= 4 else []
+    aliases += {'GOOG': ['Alphabet', 'Google'], 'GOOGL': ['Alphabet', 'Google'],
+                'META': ['Meta Platforms'], 'NVDA': ['NVIDIA']}.get(symbol, [])
+    ambiguous = {'apple', 'meta', 'block', 'target', 'gap', 'visa', 'cat', 'cost', 'all', 'on'}
+    rows, seen = [], set()
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict) or not _link(item.get('url')):
+            continue
+        title = str(item.get('title') or '')
+        # RSS titles often append a publisher. Do not match a company mentioned only as publisher.
+        headline = title.rsplit(' - ', 1)[0]
+        raw_date = str(item.get('time_published') or '')
+        try:
+            published = datetime.strptime(raw_date, '%Y%m%dT%H%M%S').replace(tzinfo=timezone.utc) if re.fullmatch(r'\d{8}T\d{6}', raw_date) else datetime.fromisoformat(raw_date.replace('Z', '+00:00'))
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        age = (now - published).total_seconds()
+        if not 0 <= age <= 7 * 86400:
+            continue
+        escaped = re.escape(symbol)
+        strong_ticker = re.search(r'(?:\$|\bNASDAQ\s*:\s*|\bNYSE\s*:\s*)' + escaped + r'\b|\(' + escaped + r'\)', headline, re.I)
+        # Unknown/common-word tickers must use explicit $/exchange/parenthesis notation.
+        unambiguous_tickers = {'NVDA', 'AAPL', 'MSFT', 'AMZN', 'GOOG', 'GOOGL', 'TSLA', 'AVGO', 'NFLX', 'INTC'}
+        plain_ticker = symbol in unambiguous_tickers and re.search(r'(?<![\w])' + escaped + r'(?![\w])', headline)
+        match = next((alias for alias in aliases if re.search(r'(?<!\w)' + re.escape(alias) + r'(?!\w)', headline, re.I)
+                      and (alias.lower() not in ambiguous or re.search(r'\b(stock|shares|earnings|revenue|iphone|ipad|macbook|ceo|dividend)\b', headline, re.I))), None)
+        if not (strong_ticker or plain_ticker or match):
+            continue
+        fingerprint = re.sub(r'\W+', '', headline).lower()
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        rows.append({**item, 'time_published': published.astimezone(timezone.utc).isoformat(),
+                     'relevance_reason': f'Headline matches {match or symbol}'})
+    rows.sort(key=lambda row: row['time_published'], reverse=True)
+    return rows[:10]
+
+
 def search_news(symbol, company):
     response = requests.get('https://news.google.com/rss/search', params={
-        'q':f'"{company or symbol}" {symbol} stock when:7d',
+        'q':f'("{company or symbol}" OR "{symbol}") stock when:7d',
         'hl':'en-US','gl':'US','ceid':'US:en'}, timeout=15, allow_redirects=False)
     response.raise_for_status()
     if len(response.content) > 2_000_000:
@@ -122,9 +170,10 @@ def market_payload(symbol):
     if not valid_symbol(symbol):
         raise ValueError('Enter a valid ticker, for example NVDA, AAPL or BRK-B')
     statuses = []
+    cache = ResearchCache()
     def fetch(section, provider, fn, empty):
         try:
-            result = fn()
+            result = fn() if isinstance(empty, pd.DataFrame) else cache.get(section + ' / ' + provider, symbol, fn)
             available = not result.empty if isinstance(result, pd.DataFrame) else bool(result)
             statuses.append({'Data':section,'Provider':provider,'Status':'Available' if available else 'No data'})
             return result
@@ -149,16 +198,27 @@ def market_payload(symbol):
         overview = fetch('Fundamentals','Alpha Vantage',alpha_overview,{})
         if overview:
             fundamentals_source = 'Alpha Vantage'
-    news = fetch('News','Yahoo Finance',lambda:normalize_news(ticker.get_news(count=10)),[])
+    try:
+        sec = sec_context(symbol, cache.get)
+        statuses.append({'Data': 'SEC research', 'Provider': 'SEC EDGAR', 'Status': sec.get('status', 'Provider unavailable')})
+    except Exception as exc:
+        sec = {}
+        statuses.append({'Data': 'SEC research', 'Provider': 'SEC EDGAR', 'Status': _failure(exc)})
+    if not overview.get('公司名稱') and sec.get('company'):
+        overview = {**overview, '公司名稱': sec['company']}
+    if fundamentals_source == 'Unavailable' and sec.get('financials'):
+        fundamentals_source = 'SEC EDGAR (reported financials; valuation metrics unavailable)'
+    company = sec.get('company') or overview.get('公司名稱')
+    news = fetch('News','Yahoo Finance',lambda:relevant_news(normalize_news(ticker.get_news(count=10)), symbol, company),[])
     news_source = 'Yahoo Finance' if news else 'Unavailable'
     if not news:
-        news = fetch('News','Google News search',lambda:search_news(symbol,overview.get('公司名稱')),[])
+        news = fetch('News','Google News search',lambda:relevant_news(search_news(symbol, company), symbol, company),[])
         if news:
             news_source = 'Google News search'
     if not news and get_secret('ALPHAVANTAGE_API_KEY'):
         def alpha_news():
             data = _request_json({'function':'NEWS_SENTIMENT','tickers':symbol,'limit':10,'apikey':get_secret('ALPHAVANTAGE_API_KEY')}, retries=0)
-            return normalize_news(data.get('feed',[]))
+            return relevant_news(normalize_news(data.get('feed',[])), symbol, company)
         news = fetch('News','Alpha Vantage',alpha_news,[])
         if news:
             news_source = 'Alpha Vantage'
@@ -170,8 +230,11 @@ def market_payload(symbol):
                  'estimate':_number(row.get('EPS Estimate')),'reported':_number(row.get('Reported EPS')),
                  'surprise':_number(row.get('Surprise(%)'))} for index,row in frame.head(4).iterrows()]
     earnings_rows = fetch('Earnings dates','Yahoo Finance',earnings,[])
-    filings = fetch('SEC / company filings','Yahoo Finance',lambda:normalize_filings(ticker.get_sec_filings()),[])
+    # Recheck cached headlines against the current clock (old news must not look fresh).
+    news = relevant_news(news, symbol, company)
+    filings = sec.get('filings') or fetch('SEC / company filings','Yahoo Finance',lambda:normalize_filings(ticker.get_sec_filings()),[])
     return {'prices':prices, 'overview':overview, 'news':news, 'earnings':earnings_rows,
             'filings':filings,'source':'Yahoo Finance', 'fundamentals_source':fundamentals_source,
-            'news_source':news_source,'provider_status':statuses,
+            'news_source':news_source if news else 'Unavailable','provider_status':statuses,
+            'reported_financials': sec.get('financials', []), 'cache_status': cache.metadata,
             'fetched_at':datetime.now(timezone.utc).isoformat()}

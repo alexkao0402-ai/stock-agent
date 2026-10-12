@@ -101,7 +101,7 @@ def _dashboard_state() -> dict[str, Any]:
         return state
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=120, show_spinner=False)
 def _market_payload(symbol: str) -> dict[str, Any]:
     return market_payload(symbol)
 
@@ -486,8 +486,11 @@ def render_market() -> None:
     meta_col.caption(f"Price source: {payload['source']} · As of {prices['date'].iloc[-1] if not prices.empty else 'Unavailable'} · Delayed data")
     st.caption(f"Fundamentals: {payload['fundamentals_source']} · News: {payload['news_source']} · Fetched: {payload['fetched_at']}")
     issues = [row for row in payload['provider_status'] if row['Status'] not in {'Available','No data'}]
-    for row in issues:
-        st.caption(f"{row['Provider']} / {row['Data']}: {row['Status']}. Available backup results are shown where possible.")
+    if issues:
+        st.caption("Some data sources are unavailable. Available backup results are shown; see Data coverage & providers for details.")
+    cache_rows = payload.get('cache_status', [])
+    if any('Stale' in row.get('Status', '') for row in cache_rows):
+        st.warning("Some research data uses a previous successful download because refresh failed. Check retrieval times below; this is not live data.")
     with st.expander("Data coverage & providers"):
         st.dataframe(
             pd.DataFrame(payload["provider_status"]),
@@ -495,6 +498,8 @@ def render_market() -> None:
             hide_index=True,
         )
         st.caption("Unavailable sections do not affect Frozen V12. They only limit the Market Intelligence view.")
+        if cache_rows:
+            st.dataframe(pd.DataFrame(cache_rows), width="stretch", hide_index=True)
 
     if not prices.empty:
         figure = go.Figure(go.Scatter(
@@ -511,7 +516,7 @@ def render_market() -> None:
     metrics = st.columns(5)
     metrics[0].metric("Market Cap", _number(overview.get("市值"), currency=True))
     metrics[1].metric("P/E", _number(overview.get("本益比")))
-    metrics[2].metric("EPS", _number(overview.get("每股盈餘"), currency=True))
+    metrics[2].metric("EPS (provider TTM)", _number(overview.get("每股盈餘"), currency=True))
     metrics[3].metric("Gross Margin", "—" if overview.get("毛利率") is None else f"{overview['毛利率']:.2f}%")
     try:
         operating_margin = float(overview["營業利益率"])
@@ -525,20 +530,25 @@ def render_market() -> None:
         st.caption("No earnings-date rows were returned. This does not mean the company has no earnings reports.")
     if not overview:
         st.warning("Fundamentals are unavailable from the current providers; missing values are not zero.")
+    if payload.get('reported_financials'):
+        st.markdown("#### SEC Reported Financials")
+        st.caption("Latest reported period for each metric, not TTM or a forecast. Periods can differ; compare the period and filing date before using these figures. USD/shares means dollars per share.")
+        st.dataframe(pd.DataFrame(payload['reported_financials']), width="stretch", hide_index=True,
+                     column_config={'Source': st.column_config.LinkColumn('SEC filing')})
 
     news_col, filing_col = st.columns(2)
     with news_col:
         st.markdown("### Latest News")
-        st.caption("Ticker-related coverage, not verified material events. Google News backup results are search matches; check the publisher and publication date.")
+        st.caption("Only dated headlines from the last 7 days explicitly matching the company or ticker are shown. This verifies headline relevance, not the article's accuracy or materiality; open the source to confirm.")
         if payload["news"]:
             for item in payload["news"][:5]:
                 title = html.escape(str(item.get("title") or "Untitled"))
                 url = html.escape(str(item.get("url") or ""), quote=True)
                 link = f'<a href="{url}" target="_blank">{title}</a>' if url else title
-                meta = " · ".join(filter(None, [str(item.get("source") or ""), str(item.get("time_published") or "")]))
+                meta = " · ".join(filter(None, [str(item.get("source") or ""), str(item.get("time_published") or ""), str(item.get("relevance_reason") or "")]))
                 st.markdown(f'<div class="event-card">{link}<div class="event-meta">{html.escape(meta)}</div></div>', unsafe_allow_html=True)
         else:
-            st.info("No news was returned by the available providers. Check Data coverage & providers for access or connection issues.")
+            st.info("No sufficiently matched recent headlines are available. Uncertain matches are hidden. Check Data coverage & providers for source issues.")
     with filing_col:
         st.markdown("### SEC / Company Filings")
         if payload["filings"]:
@@ -548,7 +558,7 @@ def render_market() -> None:
                 link = f'<a href="{url}" target="_blank">{html.escape(title)}</a>' if url else html.escape(title)
                 st.markdown(f'<div class="event-card">{link}<div class="event-meta">{html.escape(item["date"])}</div></div>', unsafe_allow_html=True)
         else:
-            st.info("Yahoo Finance did not return any available SEC or company filings.")
+            st.info("No company filings are available from the current sources. Check SEC configuration and provider status above.")
 
     st.markdown("### AI Key Takeaways")
     st.caption("AI summarizes only the displayed prices, fundamentals, and news. It does not provide price targets or trading instructions.")

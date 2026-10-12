@@ -2,12 +2,17 @@ import unittest
 from unittest.mock import Mock, patch
 import pandas as pd
 import requests
+import tempfile
+from datetime import datetime, timezone
+from src.research_cache import ResearchCache
 from src.market_intelligence import market_payload, yahoo_overview, normalize_news, normalize_filings, search_news, valid_symbol
 from src.stock_data import DataProviderError
 
 
 class MarketIntelligenceTests(unittest.TestCase):
     def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
         self.ticker = Mock()
         self.ticker.get_info.return_value = {'longName':'NVIDIA','marketCap':123,'grossMargins':.75,'operatingMargins':.4}
         self.ticker.get_news.return_value = []
@@ -16,7 +21,9 @@ class MarketIntelligenceTests(unittest.TestCase):
         self.patchers = [patch('src.market_intelligence.yf.Ticker',return_value=self.ticker),
                          patch('src.market_intelligence.get_long_history_stock_data',return_value=pd.DataFrame()),
                          patch('src.market_intelligence.get_secret',return_value=None),
-                         patch('src.market_intelligence.search_news',return_value=[{'title':'News','url':'https://example.com'}])]
+                         patch('src.market_intelligence.sec_context',return_value={'status':'SEC_USER_AGENT not configured'}),
+                         patch('src.market_intelligence.ResearchCache',side_effect=lambda: ResearchCache(directory.name)),
+                         patch('src.market_intelligence.search_news',return_value=[{'title':'NVIDIA earnings news','url':'https://example.com', 'time_published':datetime.now(timezone.utc).isoformat()}])]
         for p in self.patchers:
             p.start(); self.addCleanup(p.stop)
 
@@ -89,6 +96,23 @@ class MarketIntelligenceTests(unittest.TestCase):
 
 
 class MarketPageTests(unittest.TestCase):
+    def test_sec_table_and_stale_warning_render_without_prices(self):
+        from streamlit.testing.v1 import AppTest
+        payload={'prices':pd.DataFrame(),'overview':{'公司名稱':'NVIDIA'}, 'news':[], 'filings':[],
+                 'earnings':[], 'source':'Yahoo Finance', 'fundamentals_source':'SEC EDGAR',
+                 'news_source':'Unavailable', 'fetched_at':'2026-10-12T00:00:00Z',
+                 'provider_status':[{'Data':'Fundamentals','Provider':'Yahoo Finance','Status':'Rate limited'}],
+                 'cache_status':[{'Data':'SEC financials','Status':'Stale backup (refresh failed)'}],
+                 'reported_financials':[{'Metric':'Revenue','Value':100,'Period end':'2026-07-26','Source':'https://www.sec.gov/Archives/a'}]}
+        with patch('app._market_payload',return_value=payload):
+            at=AppTest.from_string('from app import render_market\nrender_market()')
+            at.session_state['market_symbol']='NVDA'
+            at.run(timeout=20)
+        self.assertFalse(at.exception)
+        self.assertTrue(any('SEC Reported Financials' in item.value for item in at.markdown))
+        self.assertTrue(any('previous successful download' in item.value for item in at.warning))
+        self.assertFalse(any('Rate limited' in item.value for item in at.caption))
+
     def test_no_prices_does_not_hide_other_sections(self):
         from streamlit.testing.v1 import AppTest
         payload={'prices':pd.DataFrame(),'overview':{'公司名稱':'NVIDIA'},
