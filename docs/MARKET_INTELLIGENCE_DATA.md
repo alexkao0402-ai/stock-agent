@@ -81,6 +81,19 @@ Headline matching does **not** verify article truth, full-text relevance, or
 materiality. Broad market articles without an explicit match are intentionally
 omitted. Google RSS links may be Google redirect links, not direct publisher URLs.
 
+Obvious non-article results are excluded by title and URL patterns: quote pages,
+OCC option-contract identifiers, quote/history SEO titles, search/directories,
+catalogs and shopping calls to action. Actual articles about stock-price moves,
+options activity or company announcements remain eligible. Cached news is also
+re-filtered. RSS collects up to 40 candidates before selecting up to 10 eligible
+headlines. This is a conservative heuristic, not full-text classification; some
+non-articles can still evade detection and some valid articles can be omitted.
+
+`SEC_USER_AGENT` must be configured separately in GitHub Actions repository
+Secrets for the month-end runner and in Streamlit Cloud Secrets for this view.
+The workflow already references the repository secret. Updating that setting
+does not dispatch or rerun any workflow, and does not alter strategy rules.
+
 ## Availability and cache
 
 Successful research responses are cached separately under Git-ignored

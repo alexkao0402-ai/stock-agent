@@ -560,7 +560,7 @@ def render_market() -> None:
     news_col, filing_col = st.columns(2)
     with news_col:
         st.markdown("### Latest News")
-        st.caption("Only dated headlines from the last 7 days explicitly matching the company or ticker are shown. This verifies headline relevance, not the article's accuracy or materiality; open the source to confirm.")
+        st.caption("Only dated headlines from the last 7 days explicitly matching the company or ticker are shown. Identifiable quote, option-contract, search and shopping pages are excluded. This checks headline relevance, not full-text accuracy or materiality; open the source to confirm.")
         if payload["news"]:
             for item in payload["news"][:5]:
                 title = html.escape(str(item.get("title") or "Untitled"))

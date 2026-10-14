@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import math
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 import xml.etree.ElementTree as ET
 
 import pandas as pd
@@ -88,6 +88,28 @@ def normalize_news(items):
     return rows
 
 
+def is_news_article(title, url):
+    """Reject identifiable directory/quote/catalog pages; not a truth classifier."""
+    if not _link(url):
+        return False
+    path = unquote(urlparse(url).path).lower()
+    # Only obvious root resource routes, not article paths containing e.g. 'options'.
+    if re.match(r'^/(?:quote|quotes|symbol|symbols|lookup|search|screener|watchlist|portfolio|options-chain|optionschain|shop|store|products|collections|category|tag)(?:/|$)', path):
+        return False
+    if re.fullmatch(r'/(?:news|markets|stocks|options|investor-relations)/?', path):
+        return False
+    text = str(title or '').strip()
+    patterns = (
+        r'(?<![A-Z0-9])[A-Z]{1,6}\d{6}[CP]\d{8}(?![A-Z0-9])',  # OCC contract identifier
+        r'\bquote\s*(?:&|and)\s*history\b',
+        r'\b(?:stock|share)\s+prices?\s*[,|–-]\s*(?:news|quotes?|charts?)\b',
+        r'\b(?:stock|share)\s+quote(?:\s*(?:&|and)\s*price)?\s*$',
+        r'\b(?:options? chain|historical data|search results|product catalog|stock screener)\s*(?:[-|:]\s*[^|]+)?$',
+        r'\b(?:add to cart|shop now|buy now|free shipping|coupon codes?)\b',
+    )
+    return bool(text) and not any(re.search(pattern, text, re.I) for pattern in patterns)
+
+
 def relevant_news(items, symbol, company=None, now=None):
     """Conservative headline matching, not verification of the publisher's claims."""
     now = now or datetime.now(timezone.utc)
@@ -105,6 +127,8 @@ def relevant_news(items, symbol, company=None, now=None):
         title = str(item.get('title') or '')
         # RSS titles often append a publisher. Do not match a company mentioned only as publisher.
         headline = title.rsplit(' - ', 1)[0]
+        if not is_news_article(headline, item['url']):
+            continue
         raw_date = str(item.get('time_published') or '')
         try:
             published = datetime.strptime(raw_date, '%Y%m%dT%H%M%S').replace(tzinfo=timezone.utc) if re.fullmatch(r'\d{8}T\d{6}', raw_date) else datetime.fromisoformat(raw_date.replace('Z', '+00:00'))
@@ -155,7 +179,7 @@ def search_news(symbol, company):
         rows.append({'title':title, 'url':url, 'source':item.findtext('source') or 'Google News search',
                      'time_published':date, 'summary':'', 'overall_sentiment_label':'Not scored'})
     rows.sort(key=lambda row:row['time_published'], reverse=True)
-    return rows[:10]
+    return rows[:40]  # Leave candidates for relevance/type filtering, not just the first ten.
 
 
 def normalize_filings(raw):

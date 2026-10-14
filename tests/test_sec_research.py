@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from src.sec_research import reported_financials, sec_context, filing_url
-from src.market_intelligence import relevant_news
+from src.market_intelligence import relevant_news, is_news_article
 from src.research_cache import ResearchCache
 
 
@@ -39,6 +39,38 @@ class HeadlineTests(unittest.TestCase):
         rows = self.rows(['NASDAQ: T beats earnings'], '20261012T120000')
         self.assertEqual(len(relevant_news(rows, 'T', None, datetime(2026,10,12,16,tzinfo=timezone.utc))), 1)
         self.assertEqual(self.filter(['The market is up'], 'T', None), [])
+
+    def test_option_quote_regression_from_cloud(self):
+        title = 'AAPL Oct 2026 270.000 put (AAPL261014P00270000) Stock Price, News, Quote & History - Yahoo! Finance Canada'
+        rows = self.rows([title], '2026-10-14T11:40:16Z')
+        self.assertEqual(relevant_news(rows, 'AAPL', 'Apple Inc.', datetime(2026,10,14,22,tzinfo=timezone.utc)), [])
+
+    def test_non_articles_rejected_by_url_or_title(self):
+        examples = [
+            ('NVDA earnings news', 'https://finance.yahoo.com/quote/NVDA/'),
+            ('Apple stock news', 'https://example.com/search?q=Apple'),
+            ('NVIDIA product catalog', 'https://example.com/shop/gpu'),
+            ('AAPL Stock Price, News, Quote & History', 'https://news.google.com/rss/articles/x'),
+            ('NVDA Options Chain', 'https://news.google.com/rss/articles/x'),
+            ('Apple iPhone shop now with free shipping', 'https://example.com/a'),
+            ('AAPL stock news', 'https://example.com/%71uote/AAPL'),
+        ]
+        for title, url in examples:
+            with self.subTest(title=title): self.assertFalse(is_news_article(title,url))
+
+    def test_real_price_options_and_company_announcements_kept(self):
+        for title, url in [
+            ('Apple Stock Hits 52-Week High — What Is Going On?', 'https://example.com/news/apple-stock-high'),
+            ('NVIDIA options trading surges after earnings', 'https://example.com/news/options/nvidia-volume'),
+            ('Apple announces earnings conference call', 'https://example.com/investor-relations/news/apple-earnings'),
+            ('Nvidia appoints head of investor relations', 'https://example.com/news/nvidia-executive'),
+        ]:
+            with self.subTest(title=title): self.assertTrue(is_news_article(title,url))
+
+    def test_cached_headlines_are_rechecked(self):
+        rows = self.rows(['NVDA Stock Price, News, Quote & History', 'NVIDIA announces earnings'])
+        for row in rows: row['relevance_reason'] = 'Headline matches NVIDIA'
+        self.assertEqual(len(relevant_news(rows,'NVDA','NVIDIA',datetime(2026,10,12,16,tzinfo=timezone.utc))), 1)
 
 
 class SecTests(unittest.TestCase):
