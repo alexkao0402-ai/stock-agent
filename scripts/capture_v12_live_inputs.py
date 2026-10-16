@@ -29,6 +29,8 @@ CRITICAL_FORWARD_FILES = [
     "src/forward_evidence.py",
     "src/forward_execution.py",
     "src/forward_valuation.py",
+    "src/forward_dividends.py",
+    "config/v12_reviewed_dividends.json",
     "src/forward_state_cloud.py",
     "scripts/capture_v12_live_inputs.py",
     "scripts/process_v12_paper_open.py",

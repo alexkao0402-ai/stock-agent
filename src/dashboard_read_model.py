@@ -481,6 +481,8 @@ def build_dashboard_snapshot(
         "excess_vs_qqq": None if v12_return is None or qqq_return is None else v12_return - qqq_return,
         "max_drawdown": drawdown,
         "cash": cash,
+        "dividends_receivable": latest_payload.get('dividends_receivable', 0.0),
+        "dividends_received": latest_payload.get('dividends', 0.0),
         "holdings": holdings,
         "selection_explanations": _selection_explanations(
             target_weights, v7, v8

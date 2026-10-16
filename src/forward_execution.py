@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 from typing import Any
 
 from src.paper_accounting import (
@@ -16,11 +17,13 @@ from src.paper_accounting import (
 from src.paper_ledger import AppendOnlyLedger, LedgerEvent, deterministic_event_id
 from src.trading_calendar import next_session, session_close, session_open
 from src.v12_live_signal import FROZEN_VERSION
+from src.forward_dividends import dividend_book
 
 
 def portfolio_state_from_ledger(ledger: AppendOnlyLedger, portfolio_id: str) -> PortfolioState:
     ledger.verify_integrity()
     rows = ledger.events(portfolio_id)
+    dividend_book(rows)
     initial = [row for row in rows if row["event_type"] == "INITIALIZE"]
     if len(initial) != 1:
         raise RuntimeError(f"unknown portfolio state for {portfolio_id}: expected one initialization")
@@ -42,6 +45,9 @@ def portfolio_state_from_ledger(ledger: AppendOnlyLedger, portfolio_id: str) -> 
             state = apply_fills(state, (order,))
         elif row["event_type"] == "DIVIDEND":
             state = apply_dividend(state, row["ticker"], float(row["payload"]["amount_per_share"]))
+        elif row["event_type"] == "DIVIDEND_PAYMENT":
+            amount = float(row['payload']['amount'])
+            state = replace(state, cash=state.cash + amount, dividends=state.dividends + amount)
         elif row["event_type"] == "SPLIT":
             state = apply_split(state, row["ticker"], float(row["payload"]["ratio"]))
         elif row["event_type"] == "TICKER_CHANGE":

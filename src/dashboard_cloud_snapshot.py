@@ -39,6 +39,8 @@ DISPLAY_STATE_FIELDS = (
     "excess_vs_qqq",
     "max_drawdown",
     "cash",
+    "dividends_receivable",
+    "dividends_received",
     "holdings",
     "selection_explanations",
     "realized_pnl",

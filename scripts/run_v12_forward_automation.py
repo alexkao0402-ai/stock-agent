@@ -1,7 +1,7 @@
 """Run one fail-closed, idempotent V12 Forward maintenance cycle."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 from pathlib import Path
 import subprocess
@@ -22,6 +22,7 @@ from src.forward_execution import execute_due_portfolios
 from src.forward_state_cloud import download_forward_state, upload_forward_state
 from src.forward_valuation import record_daily_valuations
 from src.paper_ledger import AppendOnlyLedger
+from src.forward_dividends import load_reviews, assert_reviewed_history
 from src.trading_calendar import NEW_YORK, is_month_end_session, is_session, session_close
 
 
@@ -107,6 +108,33 @@ def _publish_dashboard(config: dict[str, str], commit: str) -> None:
     )
 
 
+def pending_valuation_dates(ledger, run_date):
+    """Bounded chronological mark recovery, never retrospective trading/signals."""
+    dates = [str(r['payload'].get('valuation_date', '')) for r in ledger.events()
+             if r['event_type'] == 'VALUATION_SNAPSHOT']
+    if not dates:
+        return [run_date]
+    last = max(dates)
+    if last > run_date:
+        raise RuntimeError('Refusing out-of-order daily run')
+    result = []
+    day = date.fromisoformat(last) + timedelta(days=1)
+    while day.isoformat() <= run_date:
+        text = day.isoformat()
+        if is_session(text):
+            if text < run_date and is_month_end_session(text):
+                raise RuntimeError('Recovery crosses month-end; manual signal/execution review required')
+            result.append(text)
+        if len(result) > 5 or (day - date.fromisoformat(last)).days > 14:
+            raise RuntimeError('Daily valuation gap exceeds bounded recovery policy')
+        day += timedelta(days=1)
+    # A missed execution must never be silently replaced by later valuations.
+    from src.forward_execution import due_portfolio_targets
+    if any(due_portfolio_targets(ledger, text) for text in result if text < run_date):
+        raise RuntimeError('Missing past execution; valuation-only recovery prohibited')
+    return result
+
+
 def run_cycle(*, now: datetime | None = None) -> dict:
     config = _cloud_configuration()
     commit = _commit()
@@ -131,6 +159,19 @@ def run_cycle(*, now: datetime | None = None) -> dict:
         _publish_dashboard(config, commit)
         return {"status": "SKIPPED_BEFORE_CLOSE", "date": run_date, "restore": restore_status}
 
+    ledger = AppendOnlyLedger(LEDGER_PATH)
+    assert_reviewed_history(ledger.events(), load_reviews(current))
+    pending = pending_valuation_dates(ledger, run_date)
+    recovered = []
+    for day in pending:
+        if day == run_date:
+            continue
+        rows = record_daily_valuations(ledger, valuation_date=day,
+            observation_fetcher=fetch_exact_raw_closes, recorded_at=current)
+        if rows:
+            _persist_forward_state(config, commit)
+            recovered.append(day)
+
     captured = False
     if is_month_end_session(run_date):
         completed = subprocess.run(
@@ -147,7 +188,6 @@ def run_cycle(*, now: datetime | None = None) -> dict:
 
     from scripts.process_v12_paper_open import fetch_exact_raw_opens
 
-    ledger = AppendOnlyLedger(LEDGER_PATH)
     executions = execute_due_portfolios(
         ledger,
         execution_date=run_date,
@@ -162,7 +202,7 @@ def run_cycle(*, now: datetime | None = None) -> dict:
         valuation_date=run_date,
         observation_fetcher=fetch_exact_raw_closes,
         recorded_at=current,
-    )
+    ) if run_date in pending else []
     if valuations:
         _persist_forward_state(config, commit)
 
@@ -175,6 +215,7 @@ def run_cycle(*, now: datetime | None = None) -> dict:
         "month_end_capture": captured,
         "executed_portfolios": [row["portfolio_id"] for row in executions],
         "valued_portfolios": [row["portfolio_id"] for row in valuations],
+        "recovered_valuation_dates": recovered,
     }
 
 

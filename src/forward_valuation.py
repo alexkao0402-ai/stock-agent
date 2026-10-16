@@ -7,6 +7,7 @@ event per active portfolio.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import asdict, replace
 import math
 from typing import Any, Callable
 
@@ -14,6 +15,7 @@ from src.forward_execution import portfolio_state_from_ledger
 from src.paper_ledger import AppendOnlyLedger, LedgerEvent, deterministic_event_id
 from src.trading_calendar import session_close
 from src.v12_live_signal import FROZEN_VERSION
+from src.forward_dividends import load_reviews, prepare_dividends, receivable
 
 
 ObservationFetcher = Callable[[list[str], str], dict[str, dict[str, float]]]
@@ -33,11 +35,12 @@ def record_daily_valuations(
     valuation_date: str,
     observation_fetcher: ObservationFetcher,
     recorded_at: datetime | None = None,
+    reviewed_dividends: dict | None = None,
 ) -> list[dict[str, Any]]:
     """Append one idempotent close valuation for every active paper account.
 
-    Corporate actions deliberately fail closed.  They must be recorded as
-    explicit DIVIDEND/SPLIT ledger events before the daily valuation continues.
+    Reviewed cash dividends and valuations commit atomically. Unreviewed
+    dividends and all unsupported splits still fail closed.
     """
     ledger.verify_integrity()
     now = recorded_at or datetime.now(timezone.utc)
@@ -47,14 +50,19 @@ def record_daily_valuations(
     if now.astimezone(timezone.utc) < close_at.astimezone(timezone.utc):
         raise ValueError("daily close valuation cannot run before the session closes")
 
+    existing = ledger.events()
+    reviews = load_reviews(now) if reviewed_dividends is None else reviewed_dividends
+
     states = {
         portfolio_id: portfolio_state_from_ledger(ledger, portfolio_id)
         for portfolio_id in _active_portfolios(ledger)
     }
     tickers = sorted({ticker for state in states.values() for ticker in state.positions})
-    if not tickers:
+    # Include reviewed ex-date securities even if sold at today's open.
+    tickers = sorted(set(tickers) | {r['ticker'] for r in reviews.values() if r['ex_date'] == valuation_date})
+    if not tickers and not any(r['event_type'] == 'DIVIDEND_ENTITLEMENT' for r in existing):
         return []
-    observations = observation_fetcher(tickers, valuation_date)
+    observations = observation_fetcher(tickers, valuation_date) if tickers else {}
     missing = sorted(set(tickers) - set(observations))
     if missing:
         raise RuntimeError(f"missing close observations for: {', '.join(missing)}")
@@ -67,14 +75,12 @@ def record_daily_valuations(
         split = float(item.get("split", 0.0))
         if not math.isfinite(close) or close <= 0:
             raise RuntimeError(f"invalid raw close for {ticker} on {valuation_date}")
-        if dividend != 0.0 or split != 0.0:
-            raise RuntimeError(
-                f"corporate action requires reviewed ledger event for {ticker} "
-                f"on {valuation_date}"
-            )
+        if not math.isfinite(dividend) or not math.isfinite(split):
+            raise RuntimeError('invalid corporate action observation')
         marks[ticker] = close
 
-    existing = ledger.events()
+    action_events = prepare_dividends(existing, valuation_date, observations, reviews, now)
+    projected_rows = existing + [asdict(event) for event in action_events]
     latest_valuation_dates = [
         str((row.get("payload") or {}).get("valuation_date") or "")
         for row in existing
@@ -84,14 +90,18 @@ def record_daily_valuations(
         raise RuntimeError("backfilled daily valuation is prohibited")
 
     recorded_text = now.astimezone(timezone.utc).isoformat(timespec="seconds")
-    events: list[LedgerEvent] = []
+    events: list[LedgerEvent] = list(action_events)
     summaries: list[dict[str, Any]] = []
     for portfolio_id, state in states.items():
-        if not state.positions:
+        if not state.positions and not any(r['event_type'] == 'DIVIDEND_ENTITLEMENT' and r['portfolio_id'] == portfolio_id for r in projected_rows):
             continue
+        payment = sum(float(e.payload['amount']) for e in action_events
+                      if e.portfolio_id == portfolio_id and e.event_type == 'DIVIDEND_PAYMENT')
+        state = replace(state, cash=state.cash + payment, dividends=state.dividends + payment)
+        dividends_receivable = receivable(projected_rows, portfolio_id)
         portfolio_marks = {ticker: marks[ticker] for ticker in state.positions}
-        equity = state.equity(portfolio_marks)
-        market_value = equity - state.cash
+        equity = state.equity(portfolio_marks) + dividends_receivable
+        market_value = equity - state.cash - dividends_receivable
         payload = {
             "valuation_date": valuation_date,
             "cash": state.cash,
@@ -100,6 +110,7 @@ def record_daily_valuations(
             "realized_pnl": state.realized_pnl,
             "unrealized_pnl": state.unrealized_pnl(portfolio_marks),
             "dividends": state.dividends,
+            "dividends_receivable": dividends_receivable,
             "transaction_costs": state.transaction_costs,
             "positions": {
                 ticker: {
@@ -109,7 +120,7 @@ def record_daily_valuations(
                 }
                 for ticker, position in sorted(state.positions.items())
             },
-            "reconciliation": "portfolio_equity = cash + market_value",
+            "reconciliation": "portfolio_equity = cash + market_value + dividends_receivable",
         }
         events.append(LedgerEvent(
             event_id=deterministic_event_id(
@@ -131,6 +142,10 @@ def record_daily_valuations(
             "portfolio_equity": equity,
         })
 
+    known = {r['event_id'] for r in existing}
+    overlaps = [e.event_id in known for e in events]
+    if any(overlaps) and not all(overlaps):
+        raise RuntimeError('Partial pre-existing dividend/valuation batch; manual review required')
     result = ledger.append_batch(events)
     if result["created"] == 0:
         return []

@@ -241,6 +241,8 @@ def render_overview() -> None:
 
     if state.get("holdings"):
         st.markdown("### Portfolio P/L & Contribution")
+        if state.get('dividends_receivable') or state.get('dividends_received'):
+            st.caption(f"Simulated dividends received: {_money(state.get('dividends_received') or 0)} · Receivable: {_money(state.get('dividends_receivable') or 0)}. Receivables are included in portfolio value but are not spendable cash; payment is booked separately on the reviewed pay date.")
         pnl_metrics = st.columns(4)
         pnl_metrics[0].metric("Realized P/L", _signed_money(state.get("realized_pnl")))
         pnl_metrics[1].metric("Unrealized P/L", _signed_money(state.get("unrealized_pnl")))
