@@ -1,35 +1,52 @@
 # Project Structure
 
 ```text
-AI_Stock_Research_clean/
-├── app.py
-├── main.py
-├── README.md
-├── PROJECT_STRUCTURE.md
-├── requirements.txt
-├── .gitignore
-├── .env.example
+stock-agent/
+├── app.py                          # Read-only Streamlit entry point
 ├── src/
-│   ├── __init__.py
-│   ├── stock_data.py
-│   ├── ai_analysis.py
-│   ├── cache_utils.py
-│   ├── prediction_tracker.py
-│   ├── strategy_v1.py
-│   ├── regime_analysis.py
-│   └── walk_forward.py
-├── experiments/
-│   └── ablation_study.py
-├── docs/
-│   └── RESEARCH_FINDINGS.md
-└── legacy/
-    └── strategy.py
+│   ├── dashboard_ui.py             # Shared Dashboard presentation components
+│   ├── dashboard_read_model.py     # Ledger-to-display projection
+│   ├── dashboard_cloud_snapshot.py # Signed cloud display transport
+│   ├── v12_live_signal.py          # Frozen V12 signal calculation
+│   ├── forward_execution.py        # T+1/T+2 paper execution
+│   ├── forward_valuation.py        # Daily portfolio valuation
+│   ├── forward_evidence.py         # Immutable evidence preparation
+│   ├── forward_state_cloud.py      # Authenticated durable state
+│   ├── paper_ledger.py             # Append-only event ledger
+│   ├── paper_accounting.py         # Cash, positions, costs and P/L
+│   ├── live_large_cap_data.py      # Point-in-time live universe inputs
+│   ├── stock_data.py               # Market Intelligence providers
+│   └── ai_analysis.py              # Optional compact AI summaries
+├── scripts/
+│   ├── run_v12_forward_automation.py
+│   ├── capture_v12_live_inputs.py
+│   ├── process_v12_paper_open.py
+│   └── export_v12_dashboard_snapshot.py
+├── tests/                           # Unit and regression tests
+├── docs/                            # Operating contract, readiness and roadmap
+├── legacy/                          # Archived strategies; not used by V12
+├── pages/                           # Historical research views; not in active navigation
+└── .github/workflows/               # Tests and scheduled Forward cycle
 ```
 
-## Directory roles
+## Production data flow
 
-- `src/`: active application and Strategy V1 modules.
-- `experiments/`: research-only experiments that are not production entry points.
-- `docs/`: durable research notes and findings.
-- `legacy/`: superseded implementations retained for comparison; do not use them in the formal research pipeline.
-- `cache/` and `predictions/`: runtime output directories, intentionally excluded from Git.
+```text
+Frozen V12
+    ↓
+Point-in-time signal and immutable evidence
+    ↓
+T+1 official / T+2 challenger paper accounts
+    ↓
+Append-only ledger and accounting reconciliation
+    ↓
+Authenticated private Supabase state
+    ↓
+Signed display-only projection
+    ↓
+Read-only Streamlit Dashboard
+```
+
+The Dashboard may format or explain saved records, but it cannot create signals,
+orders, fills, positions, valuations or ledger events. Files under `legacy/` and
+`pages/` are research references and are not part of the active V12 navigation.
