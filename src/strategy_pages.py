@@ -342,7 +342,7 @@ def render_paired_page(page, v12, e3):
     """Use the same section and component for each independent strategy."""
     models = (v12_model(v12), e3_model(e3))
     st.caption("V12 on the left · E3 on the right. On small screens, each matching section stacks vertically. Accounts and start dates remain separate.")
-    for heading, render in SECTIONS[page]:
+    def paired_section(heading, render):
         st.subheader(heading)
         columns = st.columns(2, gap="large")
         for column, model in zip(columns, models):
@@ -352,6 +352,18 @@ def render_paired_page(page, v12, e3):
                     st.error(f"{model['name']} data unavailable. No substitute balance or performance is shown.")
                 else:
                     render(model)
+
+    sections = SECTIONS[page]
+    if page == "overview":
+        # Keep the daily readout first; supporting evidence remains available in matching panels.
+        for heading, render in sections[:2]:
+            paired_section(heading, render)
+        with st.expander("More strategy detail — holdings, decisions, accounting and timelines", expanded=False):
+            for heading, render in sections[2:]:
+                paired_section(heading, render)
+    else:
+        for heading, render in sections:
+            paired_section(heading, render)
 
 
 def render_market_context(v12, e3):

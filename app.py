@@ -16,10 +16,8 @@ from src.ai_analysis import (
 )
 from src.config import get_secret
 from src.market_intelligence import market_payload, valid_symbol
-from src.v3_dashboard import render_v3_dashboard
 from src.e3_dashboard import dashboard_view
 from src.e3_dashboard_snapshot import E3DisplayError
-from src.strategy_overview import render_strategy_overview
 from src.strategy_pages import render_market_context, render_paired_page
 from src.dashboard_cloud_snapshot import (
     DashboardSnapshotError,
@@ -157,7 +155,7 @@ def render_overview() -> None:
     _header("Paper Trading", "V12 + E3 Overview", "Matching details for both independent paper strategies.")
     _paper_banner()
     state, e3 = _dashboard_state(), _e3_view()
-    render_strategy_overview(state, e3)
+    st.info("Returns cover each account's own start date. V12 and E3 are separate accounts; a fair comparison requires matching dates and enough forward observations.")
     render_paired_page("overview", state, e3)
 
 
@@ -339,15 +337,13 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         st.divider()
-    navigation = st.navigation({"V12 + E3": [
+    navigation = st.navigation([
         st.Page(render_overview, title="Overview", default=True),
         st.Page(render_activity, title="Activity"),
         st.Page(render_market, title="Market Intelligence"),
         st.Page(render_strategy_health, title="Strategy Health"),
         st.Page(render_accounting, title="Accounting", url_path="accounting"),
-    ], "Research reference": [
-        st.Page(render_v3_dashboard, title="V3 Accounting"),
-    ]})
+    ])
     navigation.run()
     st.markdown('<div class="footer-note">For education and research only. Paper trading is not a real execution, and past performance does not predict future results.</div>', unsafe_allow_html=True)
 
