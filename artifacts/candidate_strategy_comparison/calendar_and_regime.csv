@@ -1,0 +1,33 @@
+Strategy,Year,Return %,Sessions
+Bollinger Band Mean Reversion,2021,6.944975,45
+Bollinger Band Mean Reversion,2022,-21.825873,251
+Bollinger Band Mean Reversion,2023,17.344538,250
+Bollinger Band Mean Reversion,2024,43.152504,252
+Bollinger Band Mean Reversion,2025,16.660455,250
+Bollinger Band Mean Reversion,2026,31.966759,204
+Bollinger Band Mean Reversion,Bear,21.136333,163
+Bollinger Band Mean Reversion,Bull,105.721579,890
+Donchian Breakout,2021,0.000000,45
+Donchian Breakout,2022,-17.184932,251
+Donchian Breakout,2023,33.162117,250
+Donchian Breakout,2024,23.757008,252
+Donchian Breakout,2025,34.154922,250
+Donchian Breakout,2026,-3.892610,204
+Donchian Breakout,Bear,1.907765,163
+Donchian Breakout,Bull,94.741653,890
+Volatility Contraction Breakout,2021,0.000000,45
+Volatility Contraction Breakout,2022,-6.926143,251
+Volatility Contraction Breakout,2023,32.820469,250
+Volatility Contraction Breakout,2024,40.932207,252
+Volatility Contraction Breakout,2025,22.211863,250
+Volatility Contraction Breakout,2026,-8.115075,204
+Volatility Contraction Breakout,Bear,12.375024,163
+Volatility Contraction Breakout,Bull,74.325837,890
+Cross-Sectional Momentum,2021,0.000000,45
+Cross-Sectional Momentum,2022,0.000000,251
+Cross-Sectional Momentum,2023,55.571739,250
+Cross-Sectional Momentum,2024,48.245981,252
+Cross-Sectional Momentum,2025,25.086698,250
+Cross-Sectional Momentum,2026,-8.002225,204
+Cross-Sectional Momentum,Bear,14.471959,163
+Cross-Sectional Momentum,Bull,131.847795,890
