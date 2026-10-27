@@ -3,7 +3,7 @@ import unittest
 import pandas as pd
 
 from src.backtest_engine import BacktestConfig
-from src.candidate_strategies import donchian_breakout, pead_availability
+from src.candidate_strategies import bollinger_mean_reversion_variant, donchian_breakout, pead_availability
 from src.portfolio_backtest import run_signal_portfolio
 
 
@@ -33,6 +33,16 @@ class CandidateStrategyTests(unittest.TestCase):
         status = pead_availability(None)
         self.assertFalse(status["comparable"])
         self.assertIn("released_at", status["missing_fields"])
+
+    def test_bollinger_filters_are_entry_only(self):
+        dates = pd.date_range("2020-01-01", periods=202)
+        stock = pd.DataFrame({"date": dates, "open": 100.0, "high": 101.0, "low": 99.0,
+                              "close": [100.0] * 200 + [80.0, 105.0], "volume": 1})
+        spy = pd.DataFrame({"date": dates, "open": 100.0, "high": 101.0, "low": 99.0,
+                            "close": [100.0] * 202, "volume": 1})
+        out = bollinger_mean_reversion_variant(stock, spy, False, False, True)
+        self.assertTrue(out.iloc[200]["entry_signal"])
+        self.assertTrue(out.iloc[201]["exit_signal"])
 
 
 if __name__ == "__main__":

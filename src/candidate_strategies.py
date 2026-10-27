@@ -27,6 +27,39 @@ def bollinger_mean_reversion(raw: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def bollinger_mean_reversion_variant(
+    raw: pd.DataFrame,
+    spy: pd.DataFrame,
+    require_spy_above_ma200: bool,
+    require_stock_above_ma200: bool,
+    exit_at_ma20: bool = True,
+) -> pd.DataFrame:
+    """Configurable, pre-registered Bollinger experiment signal frame.
+
+    Both trend conditions are entry restrictions only. They never force an
+    existing position to liquidate.
+    """
+    df = _ordered(raw)
+    market = _ordered(spy)[["date", "close"]].rename(columns={"close": "spy_close"})
+    market["spy_ma200"] = market["spy_close"].rolling(200, min_periods=200).mean()
+    df = df.merge(market, on="date", how="left", validate="one_to_one")
+    df["middle"] = df["close"].rolling(20, min_periods=20).mean()
+    std = df["close"].rolling(20, min_periods=20).std(ddof=0)
+    df["lower"] = df["middle"] - 2.0 * std
+    df["stock_ma200"] = df["close"].rolling(200, min_periods=200).mean()
+    eligible = df["lower"].notna() & (df["close"] < df["lower"])
+    if require_spy_above_ma200:
+        eligible &= df["spy_ma200"].notna() & (df["spy_close"] > df["spy_ma200"])
+    if require_stock_above_ma200:
+        eligible &= df["stock_ma200"].notna() & (df["close"] > df["stock_ma200"])
+    df["entry_signal"] = eligible
+    df["exit_signal"] = (df["close"] >= df["middle"]) if exit_at_ma20 else False
+    # Larger score means a deeper normalized deviation. Portfolio ties use
+    # ticker ascending in the shared engine.
+    df["score"] = ((df["lower"] - df["close"]) / df["lower"]).clip(lower=0)
+    return df
+
+
 def donchian_breakout(raw: pd.DataFrame) -> pd.DataFrame:
     """Close above the prior 55-session high; exit below prior 20-session low."""
     df = _ordered(raw)

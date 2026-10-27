@@ -105,7 +105,7 @@ def run_signal_portfolio(
             if bool(row.get("entry_signal", False)):
                 score = float(row.get("score", 0.0)) if pd.notna(row.get("score", 0.0)) else 0.0
                 candidates.append((score, symbol))
-        candidates.sort(reverse=True)
+        candidates.sort(key=lambda item: (-item[0], item[1]))
         pending = {"signal_date": date, "exits": exits, "exit_reasons": reasons,
                    "entries": [symbol for _, symbol in candidates[:max(0, slots)]]}
 
