@@ -62,7 +62,8 @@ def stamp(value):
 
 
 def code_hashes():
-    return {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in FROZEN_FILES}
+    # Git may change Windows line endings without changing the implementation.
+    return {name: hashlib.sha256((ROOT / name).read_bytes().replace(b"\r\n", b"\n")).hexdigest() for name in FROZEN_FILES}
 
 
 def dependency_versions():
