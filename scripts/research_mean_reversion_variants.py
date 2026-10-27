@@ -56,25 +56,29 @@ def round_trips(trades: list[dict]) -> list[dict]:
     return completed
 
 
-def segment_metrics(frame: pd.DataFrame) -> dict:
+def segment_metrics(frame: pd.DataFrame, anchor_date=None) -> dict:
     clean = frame.dropna(subset=["return"])
     ret = clean["return"]
-    wealth = (1 + ret).cumprod()
+    wealth = np.concatenate(([1.0], (1 + ret).cumprod().to_numpy()))
     vol = ret.std(ddof=0)
-    downside = ret[ret < 0].std(ddof=0)
-    years = max((clean["date"].iloc[-1] - clean["date"].iloc[0]).days / 365.25, 1 / 252)
-    total = wealth.iloc[-1] - 1
+    downside = np.sqrt(np.square(np.minimum(ret.to_numpy(), 0)).mean())
+    start = pd.Timestamp(anchor_date) if anchor_date is not None else pd.Timestamp(frame["date"].iloc[0])
+    years = max((clean["date"].iloc[-1] - start).days / 365.25, 1 / 252)
+    total = wealth[-1] - 1
     return {"Return %": total * 100, "CAGR %": ((1 + total) ** (1 / years) - 1) * 100,
             "Sharpe": ret.mean() / vol * np.sqrt(252) if vol > 0 else 0,
             "Sortino": ret.mean() / downside * np.sqrt(252) if pd.notna(downside) and downside > 0 else 0,
-            "Max Drawdown %": (wealth / wealth.cummax() - 1).min() * 100, "Sessions": len(clean)}
+            "Max Drawdown %": (wealth / np.maximum.accumulate(wealth) - 1).min() * 100, "Sessions": len(clean)}
 
 
 def row(name: str, stage: str, result: dict, spy: dict, equal_weight: dict, split: int) -> dict:
     curve = returns(result)
     spy_returns = returns(spy).set_index("date")["return"]
     ew_returns = returns(equal_weight).set_index("date")["return"]
-    full, research, oos = segment_metrics(curve), segment_metrics(curve.iloc[:split + 1]), segment_metrics(curve.iloc[split:])
+    # Return dated split belongs only to OOS; use the prior close as its anchor.
+    full = segment_metrics(curve)
+    research = segment_metrics(curve.iloc[:split])
+    oos = segment_metrics(curve.iloc[split:], anchor_date=curve.iloc[split - 1]["date"])
     oos_dates = curve.iloc[split:]["date"]
     spy_oos = ((1 + spy_returns.reindex(oos_dates).dropna()).prod() - 1) * 100
     ew_oos = ((1 + ew_returns.reindex(oos_dates).dropna()).prod() - 1) * 100
@@ -187,7 +191,7 @@ def main() -> None:
     pd.DataFrame(entry_rows).to_csv(out / "entry_regime.csv", index=False, float_format="%.6f")
     (out / "selection.txt").write_text(
         f"Stage A selected filter: {chosen_name}\nRule: highest research Sharpe, then Sortino, then shallower drawdown.\n"
-        f"Research end: {pd.Timestamp(dates[split]).date()}\nOOS start: {pd.Timestamp(dates[split]).date()}\n",
+        f"Research end: {pd.Timestamp(dates[split - 1]).date()}\nOOS start: {pd.Timestamp(dates[split]).date()}\n",
         encoding="utf-8",
     )
     print(f"Stage A selected: {chosen_name}")

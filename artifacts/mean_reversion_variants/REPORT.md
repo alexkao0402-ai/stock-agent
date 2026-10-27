@@ -1,5 +1,7 @@
 # Bollinger Mean Reversion variant study
 
+Accounting correction (2026-10-26): the exported tables below retain the original run's one-return-day research/OOS overlap and old Sortino convention. Corrected CSM/E3 period metrics and the allocation experiment are in `../csm_e3_sleeves/REPORT.md`. The generator now uses disjoint split dates, prior-close segment anchors, and RMS downside over all sessions. Historical return figures are explored evidence, not new forward data.
+
 Run date: 2026-10-26. Common sample: 2021-10-27 through 2026-10-23. The first 70% of sessions is the research period; the final 30% begins 2025-04-28. All variants use the same ten stocks, $10,000 initial capital, maximum two equal-weight positions, 0.10% commission, 0.05% adverse slippage, and T-close signal/T+1-open execution.
 
 ## Stage A: entry filters
