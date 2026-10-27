@@ -17,7 +17,7 @@ from src.ai_analysis import (
 from src.config import get_secret
 from src.market_intelligence import market_payload, valid_symbol
 from src.v3_dashboard import render_v3_dashboard
-from src.e3_dashboard import dashboard_view, render_e3_dashboard
+from src.e3_dashboard import dashboard_view
 from src.e3_dashboard_snapshot import E3DisplayError
 from src.strategy_overview import render_strategy_overview
 from src.strategy_pages import render_market_context, render_paired_page
@@ -347,7 +347,6 @@ def main() -> None:
         st.Page(render_accounting, title="Accounting", url_path="accounting"),
     ], "Research reference": [
         st.Page(render_v3_dashboard, title="V3 Accounting"),
-        st.Page(render_e3_dashboard, title="E3 Forward Paper", url_path="e3-forward-paper"),
     ]})
     navigation.run()
     st.markdown('<div class="footer-note">For education and research only. Paper trading is not a real execution, and past performance does not predict future results.</div>', unsafe_allow_html=True)

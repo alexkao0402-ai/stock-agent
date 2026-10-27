@@ -32,7 +32,7 @@ def account_cards(v12, e3=None):
         "idea": "Looks for a short-term price dip in a stock with a long-term uptrend. Holds for 10 trading sessions, then exits at the following open.",
         "value": "Unavailable", "return": "Unavailable", "cash": "Unavailable",
         "status": "Data unavailable", "holdings": "Unavailable", "asof": "Unavailable",
-        "published": "Unavailable", "next": "Open E3 Forward Paper to check the data.",
+        "published": "Unavailable", "next": "Open Strategy Health to check the E3 data.",
     }
     if e3 is not None:
         account = e3["accounts"]["E3"]
@@ -105,4 +105,4 @@ def render_strategy_overview(v12, e3=_UNSET):
             "- **What happens next:** the saved plan or next check, not a promise to trade. Signals use the close; fills use a later market open.\n"
             "- **E3 limits:** at most 2 stocks, up to 50% per new position, subject to available cash. Costs are 0.10% commission + 0.05% adverse slippage per fill."
         )
-    st.markdown("[E3 rules, holdings and paper trades](/e3-forward-paper)")
+    st.caption("Both strategies' rules are in Strategy Health; holdings are below and paper fills are in Activity.")

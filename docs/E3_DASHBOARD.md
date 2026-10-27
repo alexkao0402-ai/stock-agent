@@ -1,10 +1,10 @@
 # E3 on the existing V12 website
 
-The existing Streamlit app has a separate **E3 Forward Paper** navigation page at `/e3-forward-paper`. It is a read-only view of the isolated F1 + E3 experiment; its results are not merged into V12's equity curve or ledger.
+E3 appears beside V12 on the existing Streamlit app's shared tracking pages. The redundant standalone **E3 Forward Paper** navigation page and its overview link have been retired. This removes duplicate navigation only; the isolated F1 + E3 study, daily collection and separate signed display publication continue unchanged.
 
 The primary **Overview, Activity, Strategy Health and Accounting** pages use the same components for V12 on the left and E3 on the right. Matching sections stack vertically on small screens. Both accounts get performance metrics, their own equity charts, holdings/signal/execution status, selection explanations, P/L and position tables, latest fills, timelines, audit details, signal evidence, event filters, operational checks and frozen rules. The overview summary cards remain above the matching detail sections. Startup E3 returns remain `Waiting`; unavailable verified data remains unavailable. Different inception dates are explicitly labeled and no winner or combined portfolio is inferred.
 
-**Market Intelligence** has an equal stock selector for each account, leading into one shared company-research view. Opening the page does not request external quotes or AI analysis. The separate V3 accounting laboratory and original E3 reference URL remain under **Research reference**; V3 is not renamed or replayed as E3.
+**Market Intelligence** has an equal stock selector for each account, leading into one shared company-research view. Opening the page does not request external quotes or AI analysis. The separate V3 accounting laboratory remains under **Research reference**; V3 is not renamed or replayed as E3. The E3 comparison-account balance table is on Overview; its freeze/start dates and session/fill counts are in Strategy Health. No display detail depends on the retired standalone page.
 
 ## Detailed projection
 

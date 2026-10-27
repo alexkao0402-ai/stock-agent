@@ -49,7 +49,7 @@ def _chart(m):
             frame = curve[curve["series"].eq(series)]
             if frame.empty:
                 continue
-            figure.add_scatter(x=pd.to_datetime(frame["date"]), y=frame["value"], name=series, mode="lines",
+            figure.add_scatter(x=pd.to_datetime(frame["date"]), y=frame["value"], name=series, mode="lines+markers" if len(frame) == 1 else "lines",
                                line={"color": colors[series], "width": 3 if series == m["name"] else 2},
                                hovertemplate=f"{series}<br>%{{x|%Y-%m-%d}}<br>$%{{y:,.2f}}<extra></extra>")
         figure.update_layout(height=350, margin={"l": 8, "r": 8, "t": 35, "b": 8}, template="plotly_dark",
@@ -71,6 +71,26 @@ def _posture(m):
         st.caption("Open-price model fills are recorded after the close using a decision saved before that open.")
     else:
         st.caption("Market regime: " + (m.get("market_regime") or "Waiting"))
+
+
+def _comparison_accounts(m):
+    if m["name"] == "E3":
+        labels = {"E3": "E3", "CSM": "Cross-Sectional Momentum", "SPY": "SPY", "EW": "Equal-weight ten stocks"}
+        rows = [{"Account": labels[name], "Paper value": money(account["equity"]), "Cash": money(account["cash"]),
+                 "Return": "Waiting" if account["return_pct"] is None else f"{account['return_pct']:+.2f}%"}
+                for name, account in m.get("comparison_accounts", {}).items()]
+        st.caption("Four separate accounts from the same E3 study start; their money is not pooled with V12.")
+    else:
+        rows = []
+        curve = m["curve"]
+        if not curve.empty:
+            for name in m["benchmarks"]:
+                values = curve[curve["series"].eq(name)].sort_values("date")
+                if not values.empty:
+                    rows.append({"Account": name, "Paper value": money(float(values["value"].iloc[-1])),
+                                 "Latest close": str(values["date"].iloc[-1])[:10]})
+        st.caption("Published V12, SPY and QQQ comparison histories use V12's own start date.")
+    _data(rows, "No recorded comparison history yet.")
 
 
 def _reasons(m):
@@ -237,6 +257,8 @@ def _safety(m):
     st.caption(f"{m.get('ledger_event_count') or 0} verified ledger events · Source {(m.get('source_commit') or 'local checkout')[:8]}")
     if m["name"] == "E3":
         st.caption("Freeze receipt: " + m.get("freeze_sha256", "Unavailable"))
+        st.caption(f"Frozen at {m.get('frozen_at') or 'Unavailable'} · First eligible signal: {m.get('first_signal_session') or 'Unavailable'} · First possible fill: {m.get('first_possible_fill_session') or 'Unavailable'} (conditional on a qualifying signal).")
+        st.caption(f"Recorded forward sessions: {m.get('formal_forward_rows') or 0} · E3 paper fills: {m.get('primary_fill_count') or 0}")
     with st.expander("What would stop a cycle?"):
         st.write("- Ledger, source, schema or signature verification failure\n- Missing prices or a missed session\n- Invalid decision timing or accounting reconciliation")
         if m["name"] == "E3":
@@ -303,7 +325,7 @@ def _dividends(m):
 
 
 SECTIONS = {
-    "overview": [("Performance", _performance), ("Recorded equity curves", _chart),
+    "overview": [("Performance", _performance), ("Recorded equity curves", _chart), ("Comparison accounts", _comparison_accounts),
                  ("Holdings, signal and execution", _posture), ("Why these stocks", _reasons),
                  ("Portfolio P/L & Contribution", _holdings), ("Latest execution", _latest_execution),
                  ("Automation timeline", _timeline)],
