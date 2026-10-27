@@ -17,6 +17,7 @@ from src.ai_analysis import (
 from src.config import get_secret
 from src.market_intelligence import market_payload, valid_symbol
 from src.v3_dashboard import render_v3_dashboard
+from src.e3_dashboard import render_e3_dashboard
 from src.dashboard_cloud_snapshot import (
     DashboardSnapshotError,
     load_signed_snapshot,
@@ -735,6 +736,7 @@ def main() -> None:
         st.Page(render_market, title="Market Intelligence"),
         st.Page(render_strategy_health, title="Strategy Health"),
         st.Page(render_v3_dashboard, title="V3 Accounting"),
+        st.Page(render_e3_dashboard, title="E3 Forward Paper", url_path="e3-forward-paper"),
     ])
     navigation.run()
     st.markdown('<div class="footer-note">For education and research only. Paper trading is not a real execution, and past performance does not predict future results.</div>', unsafe_allow_html=True)

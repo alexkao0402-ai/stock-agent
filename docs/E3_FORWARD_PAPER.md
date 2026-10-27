@@ -27,6 +27,7 @@ Run `python scripts/run_e3_forward.py cycle` each trading weekday at 13:30 Ameri
 3. Execute only the previous close's already-recorded plan at the current session's modeled open. Quantities use available open-time cash and marks; no same-day close is used to size these fills. Record the modeled fills after the close with their true later recording timestamp.
 4. Mark actual paper shares at the raw close, then create and persist the next-open plan before its deadline.
 5. Save source observations, signal details, decisions, modeled fills, costs, cash, positions, corporate actions and NAV. Identical retries must not add trades or duplicate observations.
+6. The separate display exporter may publish the verified E3-only snapshot to its own object for the existing V12 website: `python scripts/publish_e3_dashboard.py --upload`. See [E3 dashboard publication](E3_DASHBOARD.md). This external read-only projection does not change the frozen runner, its journal, or V12 state.
 
 If a required session was missed, the runner stops and reports the gap. Do not run a retrospective signal, choose a better later price, silently substitute stale prices, erase an event, reset the account or alter the frozen strategy. Missing current data may be retried before the next-open deadline; a missed deadline requires review.
 
