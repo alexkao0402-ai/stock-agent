@@ -364,21 +364,3 @@ def render_paired_page(page, v12, e3):
     else:
         for heading, render in sections:
             paired_section(heading, render)
-
-
-def render_market_context(v12, e3):
-    """One shared company-research page, with equal access from both accounts."""
-    with st.expander("Research stocks from either strategy", expanded=True):
-        for column, model in zip(st.columns(2), (v12_model(v12), e3_model(e3))):
-            with column:
-                st.markdown(f"**{model['name']}**")
-                if not model["available"]:
-                    st.caption("Strategy context is unavailable.")
-                    continue
-                stocks = [p["ticker"] for p in model["positions"]]
-                st.caption("Holding: " + (", ".join(stocks) or "Cash only"))
-                candidates = stocks or (model.get("rules", {}).get("universe", []) if model["name"] == "E3" else list((model.get("target_weights") or {})))
-                selected = st.selectbox("Research ticker", ["Choose a stock"] + candidates, key=f"{model['name']}_research_stock")
-                if st.button(f"Research {model['name']} stock", key=f"{model['name']}_research_button", disabled=selected == "Choose a stock"):
-                    st.session_state["market_symbol"] = selected
-        st.caption("Prices, earnings, news and filings below are shared company research. They do not create orders or change either frozen strategy.")

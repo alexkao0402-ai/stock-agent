@@ -15,10 +15,11 @@ from src.ai_analysis import (
     has_compact_ai_key,
 )
 from src.config import get_secret
-from src.market_intelligence import market_payload, valid_symbol
+from src.market_intelligence import market_payload
+from src.market_search import render_market_search
 from src.e3_dashboard import dashboard_view
 from src.e3_dashboard_snapshot import E3DisplayError
-from src.strategy_pages import render_market_context, render_paired_page
+from src.strategy_pages import render_paired_page
 from src.dashboard_cloud_snapshot import (
     DashboardSnapshotError,
     load_signed_snapshot,
@@ -167,20 +168,8 @@ def render_activity() -> None:
 
 def render_market() -> None:
     _header("Market Intelligence", "Market Intelligence", "Prices, earnings, material news, and company filings in one concise view.")
-    render_market_context(_dashboard_state(), _e3_view())
-    search, action = st.columns([5, 1])
-    with search:
-        symbol = st.text_input("Ticker", value=st.session_state.get("market_symbol", ""), placeholder="For example: AAPL or NVDA", label_visibility="collapsed").strip().upper()
-    with action:
-        clicked = st.button("Search", type="primary", width="stretch")
-    if clicked:
-        if not valid_symbol(symbol):
-            st.warning("Enter a valid ticker, for example NVDA, AAPL or BRK-B.")
-            return
-        st.session_state["market_symbol"] = symbol
-    symbol = st.session_state.get("market_symbol", "")
+    symbol = render_market_search()
     if not symbol:
-        st.info("Enter a ticker and select Search. Opening this page does not automatically call external data or AI APIs.")
         return
 
     with st.spinner(f"Loading market data for {symbol}…"):

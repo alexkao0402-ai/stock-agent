@@ -157,16 +157,5 @@ class PairedPageTests(unittest.TestCase):
         self.assertTrue(any(s.key == "E3_side" for s in app.selectbox))
         self.assertGreater(len(app.dataframe), 2)
 
-    def test_market_context_does_not_fetch_quotes_on_open(self):
-        from streamlit.testing.v1 import AppTest
-        with patch("src.strategy_pages.v12_model", return_value=v12_model(v12_view())), \
-             patch("src.strategy_pages.e3_model", return_value=e3_model(startup_view())), \
-             patch("src.market_intelligence.market_payload") as fetch:
-            app = AppTest.from_string("from src.strategy_pages import render_market_context\nrender_market_context({}, None)").run(timeout=20)
-        self.assertEqual(len(app.exception), 0)
-        fetch.assert_not_called()
-        self.assertEqual(len(app.selectbox), 2)
-
-
 if __name__ == "__main__":
     unittest.main()
