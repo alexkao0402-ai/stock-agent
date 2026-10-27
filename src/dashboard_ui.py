@@ -57,6 +57,21 @@ def inject_style() -> None:
         .empty-state h3 { margin:0 0 .45rem; }
         .empty-state p { color:var(--text-secondary); margin:0; }
         .overview-card-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; margin:.15rem 0 1.25rem; }
+        .strategy-pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; margin:.5rem 0 1rem; }
+        .strategy-summary { min-width:0; padding:1.4rem; border:1px solid var(--line); border-top:3px solid var(--accent); border-radius:12px; background:var(--surface); }
+        .strategy-summary.e3 { border-top-color:#818cf8; }
+        .strategy-role { font-size:.75rem; color:var(--text-secondary); }
+        .strategy-summary h3 { margin:.4rem 0 .5rem !important; font-size:1.8rem; }
+        .strategy-summary p { color:var(--text-secondary); font-size:.88rem; line-height:1.6; margin:1rem 0; overflow-wrap:anywhere; }
+        .strategy-summary b { color:var(--text); }
+        .strategy-idea { min-height:4.5rem; }
+        .strategy-state { border-radius:6px; background:rgba(255,255,255,.05); padding:.55rem .7rem; font-size:.82rem; }
+        .strategy-numbers { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin:1.25rem 0; }
+        .strategy-numbers > div:first-child { grid-column:1/-1; }
+        .strategy-numbers span { display:block; font-size:.75rem; color:var(--text-secondary); }
+        .strategy-numbers strong { font-size:1.1rem; font-variant-numeric:tabular-nums; }
+        .strategy-numbers > div:first-child strong { font-size:2rem; }
+        .strategy-asof { font-size:.7rem; line-height:1.6; color:var(--muted); overflow-wrap:anywhere; border-top:1px solid var(--line); padding-top:.8rem; }
         .overview-card { min-width:0; min-height:218px; padding:1.25rem; border:1px solid var(--line); border-radius:12px; background:var(--surface); display:flex; flex-direction:column; box-sizing:border-box; transition:border-color 180ms ease,background-color 180ms ease; }
         .overview-card:hover { border-color:rgba(255,255,255,.15); background:var(--surface-raised); }
         .overview-card-kicker { color:var(--accent); font-size:.68rem; font-weight:740; letter-spacing:.13em; margin-bottom:.55rem; }
@@ -106,6 +121,8 @@ def inject_style() -> None:
         @media (max-width:720px) {
           .block-container { padding:4rem .75rem 3rem; }
           .overview-card-grid, .selection-grid { grid-template-columns:1fr; gap:.7rem; }
+          .strategy-pair { grid-template-columns:1fr; }
+          .strategy-idea { min-height:0; }
           .timeline { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.55rem; }
           .health-strip { grid-template-columns:1fr; }
           .health-cell { border-right:0; border-bottom:1px solid var(--line); }

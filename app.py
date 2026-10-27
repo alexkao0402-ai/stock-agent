@@ -18,6 +18,7 @@ from src.config import get_secret
 from src.market_intelligence import market_payload, valid_symbol
 from src.v3_dashboard import render_v3_dashboard
 from src.e3_dashboard import render_e3_dashboard
+from src.strategy_overview import render_strategy_overview
 from src.dashboard_cloud_snapshot import (
     DashboardSnapshotError,
     load_signed_snapshot,
@@ -154,9 +155,12 @@ def _rebalance_change_summary(trades: list[dict[str, Any]]) -> str:
 
 
 def render_overview() -> None:
-    _header("Portfolio", "Overview / Paper Trading", "Current paper portfolio, performance, and latest monthly rebalance.")
+    _header("Paper Trading", "V12 + E3 Overview", "See both strategies, what they hold, and what happens next.")
     _paper_banner()
     state = _dashboard_state()
+    render_strategy_overview(state)
+    st.divider()
+    st.subheader("V12 performance and details")
     latest_valuation = latest_curve_date(state)
     if state["integrity_error"]:
         st.error(f"Dashboard sync error: {state['integrity_error']}")
@@ -726,7 +730,7 @@ def main() -> None:
         st.markdown(
             '<div class="brand-kicker">FORWARD RESEARCH</div>'
             '<div class="brand-title">V12 Dashboard</div>'
-            '<div class="brand-meta">Frozen strategy<br>Read-only interface</div>',
+            '<div class="brand-meta">V12 + E3 paper accounts<br>Read-only interface</div>',
             unsafe_allow_html=True,
         )
         st.divider()

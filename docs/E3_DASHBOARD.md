@@ -2,6 +2,8 @@
 
 The existing Streamlit app has a separate **E3 Forward Paper** navigation page at `/e3-forward-paper`. It is a read-only view of the isolated F1 + E3 experiment; its results are not merged into V12's equity curve or ledger.
 
+The main **Overview** also shows V12 and E3 together in two responsive cards: paper value, return since each account's own start, available cash, current holdings, next saved action/check, valuation date and publication time. Plain-language explanations distinguish the strategies. Startup E3 returns remain `Waiting`; unavailable verified data remains unavailable. Different inception dates are explicitly labeled and no winner or combined portfolio is inferred. V12's existing detail view continues below the cards; the E3 detail page remains accessible from the overview and sidebar.
+
 ## Data flow
 
 1. The unchanged frozen E3 runner records its prospective plans, simulated fills and closes locally.

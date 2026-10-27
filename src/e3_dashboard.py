@@ -19,19 +19,24 @@ def freshness(view, now=None):
     return None
 
 
+def dashboard_view():
+    """Load the same verified, read-only E3 view for both website pages."""
+    from src.config import get_secret
+    return load_display(get_secret("SUPABASE_URL"), get_secret("SUPABASE_SECRET_KEY") or get_secret("SUPABASE_SERVICE_ROLE_KEY"),
+                        get_secret("E3_DASHBOARD_SYNC_SECRET") or get_secret("V12_DASHBOARD_SYNC_SECRET"))
+
+
 def render_e3_dashboard():
     import pandas as pd
     import plotly.graph_objects as go
     import streamlit as st
-    from src.config import get_secret
     from src.dashboard_ui import header, money, paper_banner
 
     header("INDEPENDENT FORWARD STUDY", "E3 Forward Paper", "Mean Reversion F1 + E3 · primary challenger · separate from Frozen V12")
     paper_banner()
     st.caption("Read-only paper account. This page cannot create signals, execute trades, or change either strategy's ledger.")
     try:
-        view = load_display(get_secret("SUPABASE_URL"), get_secret("SUPABASE_SECRET_KEY") or get_secret("SUPABASE_SERVICE_ROLE_KEY"),
-                            get_secret("E3_DASHBOARD_SYNC_SECRET") or get_secret("V12_DASHBOARD_SYNC_SECRET"))
+        view = dashboard_view()
     except E3DisplayError as exc:
         st.error(str(exc))
         return
