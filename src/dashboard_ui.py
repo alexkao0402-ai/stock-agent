@@ -60,6 +60,10 @@ def inject_style() -> None:
         .strategy-pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; margin:.5rem 0 1rem; }
         .strategy-summary { min-width:0; padding:1.4rem; border:1px solid var(--line); border-top:3px solid var(--accent); border-radius:12px; background:var(--surface); }
         .strategy-summary.e3 { border-top-color:#818cf8; }
+        .paired-label { font-size:1.1rem; font-weight:720; border-left:3px solid var(--accent); padding-left:.65rem; margin-bottom:1rem; }
+        .paired-label.e3 { border-left-color:#818cf8; }
+        [data-testid="stColumn"] .overview-card-grid, [data-testid="stColumn"] .selection-grid { grid-template-columns:1fr; }
+        [data-testid="stColumn"] .timeline { grid-template-columns:repeat(2,minmax(0,1fr)); }
         .strategy-role { font-size:.75rem; color:var(--text-secondary); }
         .strategy-summary h3 { margin:.4rem 0 .5rem !important; font-size:1.8rem; }
         .strategy-summary p { color:var(--text-secondary); font-size:.88rem; line-height:1.6; margin:1rem 0; overflow-wrap:anywhere; }

@@ -76,6 +76,7 @@ def render_v3_dashboard():
     header('ISOLATED V3', 'V3 Accounting', 'Independent challenger · not the official Frozen V12 portfolio')
     paper_banner()
     st.caption('Read-only cloud view. This page cannot generate signals, place orders, or change the ledger.')
+    st.caption('This is the separate V3 accounting laboratory. Use Accounting in the V12 + E3 section for the two primary paper accounts.')
     try:
         view = load_v3_dashboard(get_secret('SUPABASE_URL'),
             get_secret('SUPABASE_SECRET_KEY') or get_secret('SUPABASE_SERVICE_ROLE_KEY'),

@@ -62,13 +62,17 @@ def account_cards(v12, e3=None):
     return cards
 
 
-def render_strategy_overview(v12):
+_UNSET = object()
+
+
+def render_strategy_overview(v12, e3=_UNSET):
     import streamlit as st
 
-    try:
-        e3 = dashboard_view()
-    except E3DisplayError:
-        e3 = None
+    if e3 is _UNSET:
+        try:
+            e3 = dashboard_view()
+        except E3DisplayError:
+            e3 = None
     st.subheader("Your two paper strategies")
     st.caption("Two separate accounts, shown together. Each keeps its own cash, holdings and results.")
     sections = []

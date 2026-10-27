@@ -2,7 +2,17 @@
 
 The existing Streamlit app has a separate **E3 Forward Paper** navigation page at `/e3-forward-paper`. It is a read-only view of the isolated F1 + E3 experiment; its results are not merged into V12's equity curve or ledger.
 
-The main **Overview** also shows V12 and E3 together in two responsive cards: paper value, return since each account's own start, available cash, current holdings, next saved action/check, valuation date and publication time. Plain-language explanations distinguish the strategies. Startup E3 returns remain `Waiting`; unavailable verified data remains unavailable. Different inception dates are explicitly labeled and no winner or combined portfolio is inferred. V12's existing detail view continues below the cards; the E3 detail page remains accessible from the overview and sidebar.
+The primary **Overview, Activity, Strategy Health and Accounting** pages use the same components for V12 on the left and E3 on the right. Matching sections stack vertically on small screens. Both accounts get performance metrics, their own equity charts, holdings/signal/execution status, selection explanations, P/L and position tables, latest fills, timelines, audit details, signal evidence, event filters, operational checks and frozen rules. The overview summary cards remain above the matching detail sections. Startup E3 returns remain `Waiting`; unavailable verified data remains unavailable. Different inception dates are explicitly labeled and no winner or combined portfolio is inferred.
+
+**Market Intelligence** has an equal stock selector for each account, leading into one shared company-research view. Opening the page does not request external quotes or AI analysis. The separate V3 accounting laboratory and original E3 reference URL remain under **Research reference**; V3 is not renamed or replayed as E3.
+
+## Detailed projection
+
+The local display exporter adds a versioned `details` block to the signed E3 object, without changing the trading runner or freeze. It copies saved entry checklists, plans, timing and journal metadata; projects every E3 paper fill; and reconstructs display cost basis from recorded fills and split actions. Current marks come only from the checksum-verified input snapshot used by the latest saved close. Average cost includes buy commission, realized P/L includes both sides' commission, and slippage is reported separately without subtracting it twice. Shares, marked value and total P/L must reconcile with the frozen runner's account or publication fails closed.
+
+The display includes all E3 fills and recorded valuation history, the latest 120 signal checks and latest 250 E3/control journal events. It is a published window, not a complete copy of the private journal. Existing V12 transport is unchanged and continues to publish its latest rebalance and event window; the UI labels that scope. No older trades are invented to make archive coverage look identical.
+
+E3 uses its already-recorded SPY/equal-weight/CSM comparison accounts. QQQ, V7/V8 agreement, historical-reference Sharpe and T+2 simulation are explicitly not collected or not applicable. Drawdown includes the initial cash high; 12-month Sharpe waits for 253 recorded closing values (252 close-to-close returns). No startup cash chart is fabricated. E3's frozen runner accrues dividends as nonspendable receivables and does not record dividend-payment cash; the accounting page explains this.
 
 ## Data flow
 

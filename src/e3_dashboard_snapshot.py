@@ -53,6 +53,19 @@ def validate_payload(payload):
         raise E3DisplayError("A startup display cannot contain forward trades or performance")
     if payload["forward_sessions"] > 0 and not payload.get("last_close"):
         raise E3DisplayError("Forward observations require a valuation date")
+    details = payload.get("details")
+    if details is not None:
+        if not isinstance(details, dict) or details.get("version") != 1:
+            raise E3DisplayError("Unsupported E3 detail projection")
+        for field in ("holdings", "transactions", "signal_history", "valuations", "events"):
+            if not isinstance(details.get(field), list):
+                raise E3DisplayError("Incomplete E3 detail projection")
+        if (len(details["transactions"]) != payload["primary_fill_count"]
+                or len(details["valuations"]) != payload["forward_sessions"]
+                or {p.get("ticker") for p in details["holdings"]} != set(payload["accounts"]["E3"]["positions"])):
+            raise E3DisplayError("E3 detail counts do not reconcile")
+        if payload["forward_sessions"] == 0 and (details["signal_history"] or details.get("max_drawdown") is not None or details.get("rolling_sharpe") is not None):
+            raise E3DisplayError("Startup details cannot contain forward performance")
     return payload
 
 
@@ -111,6 +124,7 @@ def publish_display(envelope, url, api_key):
 def build_local_projection(home):
     """Called only by the trusted local exporter in the frozen runtime."""
     from src.e3_forward import CONTROL, read_freeze, read_state, status
+    from src.e3_display_details import build_details
     freeze = read_freeze(home)
     ledger, _ = read_state(home, freeze)
     info = status(home)
@@ -136,6 +150,7 @@ def build_local_projection(home):
                           | {"recorded_at": item["created_at"]})
     projection = {key: info[key] for key in ("status", "version", "frozen_at", "first_signal_session", "first_possible_fill_session",
                   "forward_sessions", "primary_fill_count", "last_close", "pending", "ledger_integrity", "freeze_sha256", "ledger_events", "paper_only")}
-    projection.update({"accounts": accounts, "rules": freeze["rules"], "curve": curve, "trades": trades[-100:],
+    projection.update({"accounts": accounts, "rules": freeze["rules"], "curve": curve, "trades": trades,
+                       "details": build_details(home, events, info),
                        "last_observed_at": closes[-1]["payload"]["observed_at"] if closes else None})
     return validate_payload(projection)
