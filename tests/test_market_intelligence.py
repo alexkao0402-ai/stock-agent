@@ -137,9 +137,22 @@ class MarketPageTests(unittest.TestCase):
         with patch('app._market_payload') as load:
             at=AppTest.from_string('from app import render_market\nrender_market()').run()
             at.text_input[0].set_value('../secret')
-            at.button[0].click().run()
+            next(button for button in at.button if button.label == 'Search').click().run()
             self.assertFalse(at.exception)
             self.assertTrue(at.warning)
+            load.assert_not_called()
+
+    def test_invalid_input_with_preceding_navigation_button(self):
+        from streamlit.testing.v1 import AppTest
+        with patch('app._market_payload') as load:
+            at=AppTest.from_string(
+                'import streamlit as st\nst.button("Unrelated navigation")\n'
+                'from app import render_market\nrender_market()').run()
+            self.assertEqual(at.button[0].label, 'Unrelated navigation')
+            at.text_input[0].set_value('../secret')
+            next(button for button in at.button if button.label == 'Search').click().run()
+            self.assertFalse(at.exception)
+            self.assertTrue(any('valid ticker' in warning.value for warning in at.warning))
             load.assert_not_called()
 
 

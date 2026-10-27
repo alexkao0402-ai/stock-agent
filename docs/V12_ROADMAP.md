@@ -1,9 +1,35 @@
 # Frozen V12 Forward Trading Roadmap
 
-Last updated: 2026-09-04
+Last updated: 2026-10-27
 Strategy: `V12-FROZEN-2026-08-28`
 
 ## Current decision
+
+### Priority reset — 2026-10-27
+
+- Pause V3 expansion. Preserve its frozen code, initialized account, qualification
+  evidence and unfinished operating tools. Do not enable V3 signing, scheduling,
+  initialization or trading, and do not delete or reset anything.
+- Keep Frozen V12 as the official paper strategy. E3 remains a separate frozen
+  Forward pullback experiment with independent capital and accounting. No mixing
+  of account returns, dates, signals or evidence is permitted.
+- Reliability first: passing tests, daily close processing, ledger integrity,
+  publication freshness, no duplicate fills and correct corporate-action cash.
+- Next accounting checkpoint: verify MU's existing V12 reviewed payment on
+  October 29 once the scheduled accounting cycle has actually completed. Do not
+  credit it early, and do not apply V3's separate payment policy to V12.
+- Next V12 signal window: October 30 close, then November 2 T+1 open, subject to
+  complete timely inputs and the frozen strategy gates. Never backfill a signal.
+- Collect V12/E3 Forward evidence versus their own aligned benchmarks. Report
+  realized/unrealized P/L, costs, exposure and drawdown. Short samples do not
+  justify parameter changes or automatic switching to whichever recently won.
+- IBKR work is read-only PAPER reconciliation only, after verifying account type
+  and comparable account boundaries. No broker orders or live-capital access.
+- Keep existing unrelated working-tree changes intact. CI success, deployment
+  success and actual scheduled execution must be reported as separate evidence.
+
+The earlier phase details below remain historical planning context. This dated
+priority reset controls current work; V3 is not a current launch milestone.
 
 - The first legal V12 forward signal, T+1/T+2 Internal Simulator lifecycle and
   first scheduled post-close valuation loop are complete.
