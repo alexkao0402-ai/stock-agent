@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src.dashboard_read_model import HISTORICAL_SHARPE
-from src.dashboard_ui import money, pct, selection_cards, signed_money, timeline, trade_activity_rows
+from src.dashboard_ui import display_timestamp, money, pct, selection_cards, signed_money, timeline, trade_activity_rows
 from src.strategy_page_model import e3_model, v12_model
 
 
@@ -18,19 +18,27 @@ def _metrics(items):
 
 def _data(rows, empty="No recorded rows yet."):
     if rows:
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+        frame = pd.DataFrame(rows)
+        currency = {"Average Cost", "Latest Price", "Market Value", "Unrealized P/L", "Fill Price", "Trade Value", "Commission", "Slippage", "Realized P/L"}
+        config = {name: st.column_config.NumberColumn(format="$%.2f") for name in currency & set(frame.columns)
+                  if pd.api.types.is_numeric_dtype(frame[name])}
+        if "Shares" in frame and pd.api.types.is_numeric_dtype(frame["Shares"]):
+            config["Shares"] = st.column_config.NumberColumn(format="%.4f")
+        for name in ("Current Weight", "Target Weight"):
+            if name in frame and pd.api.types.is_numeric_dtype(frame[name]):
+                frame[name] = frame[name].map(lambda v: "—" if pd.isna(v) else f"{v:.1%}")
+        st.dataframe(frame, hide_index=True, width="stretch", column_config=config)
     else:
         st.info(empty)
 
 
 def _performance(m):
-    _metrics([("Portfolio Value", money(m.get("portfolio_value"))),
-              ("Cumulative Return", "Waiting" if m.get("cumulative_return") is None else pct(m["cumulative_return"])),
-              ("vs SPY", pct(m.get("excess_vs_spy"), points=True)),
-              (f"vs {m['benchmark']}", pct(m.get("excess_vs_qqq"), points=True)),
+    st.metric("Portfolio Value", money(m.get("portfolio_value")))
+    _metrics([("Cumulative Return", "Waiting" if m.get("cumulative_return") is None else pct(m["cumulative_return"])),
               ("Max Drawdown", pct(m.get("max_drawdown"))),
-              ("Cash", money(m.get("cash")))])
-    st.caption(f"Latest recorded close: {m.get('valuation_date') or 'Waiting'} · Display updated: {m.get('publication') or 'Unavailable'}")
+              ("vs SPY", pct(m.get("excess_vs_spy"), points=True)),
+              (f"vs {m['benchmark']}", pct(m.get("excess_vs_qqq"), points=True))])
+    st.caption(f"Prices as of {m.get('valuation_date') or 'Waiting'} · Published {display_timestamp(m.get('publication'))}")
     if m.get("delayed"):
         st.warning(m["freshness_message"])
     if m["name"] == "E3":
@@ -39,9 +47,14 @@ def _performance(m):
 
 def _chart(m):
     curve = m["curve"]
-    with st.container(height=380, border=False):
+    with st.container(border=False):
         if curve.empty or not m.get("formal_forward_rows"):
             st.info("Waiting for recorded forward closes. Initial cash is not a performance chart.")
+            return
+        observations = curve.loc[curve["series"].eq(m["name"]), "date"].nunique()
+        if observations < 2:
+            st.info("First close recorded. The equity chart will appear after two recorded sessions.")
+            st.caption(f"Recorded sessions: {observations} · Paper fills: {m.get('primary_fill_count') or 0}. One observation cannot show a performance trend.")
             return
         figure = go.Figure()
         colors = {"V12": "#39d98a", "E3": "#818cf8", "SPY": "#d4d4d8", "QQQ": "#818cf8", "EW": "#e8b84b", "CSM": "#60a5fa"}
@@ -54,23 +67,11 @@ def _chart(m):
                                hovertemplate=f"{series}<br>%{{x|%Y-%m-%d}}<br>$%{{y:,.2f}}<extra></extra>")
         figure.update_layout(height=350, margin={"l": 8, "r": 8, "t": 35, "b": 8}, template="plotly_dark",
                              paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#0d0d10", hovermode="x unified",
+                             xaxis={"tickformat": "%b %d", "type": "date"},
                              yaxis={"tickprefix": "$"}, legend={"orientation": "h", "y": 1.15})
         st.plotly_chart(figure, width="stretch", key=f"{m['name']}_equity", config={"displaylogo": False})
     if m["name"] == "E3":
         st.caption("CSM is E3's separate Cross-Sectional Momentum comparison account; it is not Frozen V12.")
-
-
-def _posture(m):
-    _metrics([("Stocks held", str(len(m["positions"]))),
-              ("Latest signal", m.get("signal_date") or "Not generated"),
-              ("Next-open plan", m.get("execution_status") or "Waiting"),
-              ("Execution date", m.get("execution_date") or m.get("next_execution_date") or "Waiting")])
-    st.write("**Saved decision:** " + m["signal_summary"])
-    if m["name"] == "E3":
-        st.caption("At most two stocks. New entries use up to 50% each, subject to cash; existing weights drift with prices.")
-        st.caption("Open-price model fills are recorded after the close using a decision saved before that open.")
-    else:
-        st.caption("Market regime: " + (m.get("market_regime") or "Waiting"))
 
 
 def _comparison_accounts(m):
@@ -119,9 +120,9 @@ def _holdings(m):
              **({"Entry Session": p.get("entry_session"), "Held Sessions": p.get("held_sessions")} if m["name"] == "E3" else {})}
             for p in m["positions"]]
     _data(rows, "No positions. Paper capital is held in cash.")
-    if m["name"] == "E3":
+    if m["name"] == "E3" and rows:
         st.caption("Average cost includes buy commission. Target weight is not applicable to E3's fixed holding rule. Marks come from captured raw closing prices, not a fresh quote.")
-    st.caption(f"Dividends received: {money(m.get('dividends_received'))} · Receivable: {money(m.get('dividends_receivable'))}. Receivables count toward value but cannot fund buys.")
+    st.caption(f"Dividends received: {money(m.get('dividends_received'))} · Receivable: {money(m.get('dividends_receivable'))}. Receivables cannot fund buys.".replace("$", r"\$"))
     if not m.get("details_available"):
         st.warning("This older E3 display lacks position and accounting details. A new verified publication is required; missing fields are not estimated.")
 
@@ -131,34 +132,27 @@ def _latest_execution(m):
     if not trades:
         st.info("No recorded paper fills yet." if m["name"] == "E3" else "No trades in the latest published allocation.")
         return
-    st.caption(f"Latest fill session: {trades[0].get('execution_date') or 'Unavailable'} · T+1 market open")
+    st.caption(f"Latest fill session: {trades[0].get('execution_date') or m.get('execution_date') or 'Unavailable'} · T+1 market open")
     buys = sum(t.get("trade_value", 0) for t in trades if t["action"] == "BUY")
     sells = sum(t.get("trade_value", 0) for t in trades if t["action"] == "SELL")
     costs = sum((t.get("fee") or 0) + (t.get("slippage_cost") or 0) for t in trades)
     _metrics([("Bought", money(buys)), ("Sold", money(sells)), ("Trading Costs", money(costs)),
               ("Portfolio Changed", pct(m.get("latest_turnover")) if m["name"] == "V12" else "Not published")])
-    st.write("; ".join(f"{t['action']} {t.get('ticker') or t.get('symbol')}" for t in trades))
-    st.caption("Activity contains quantities, fills, costs and the execution audit.")
-
-
-def _timeline(m):
-    timeline([("Latest signal", m.get("signal_date") or "Not generated"),
-              ("T+1 execution", f"{m.get('execution_status') or 'Waiting'} · {m.get('execution_date') or 'Waiting'}"),
-              ("Latest valuation", m.get("valuation_date") or "Waiting"),
-              ("Next check", (m.get("next_signal_date") or "After next market close") + " close" if m.get("next_signal_date") else "After next market close")])
-    if m["name"] == "V12" and m.get("next_execution_date"):
-        st.caption(f"Next expected fill session: {m['next_execution_date']}")
-    if m["name"] == "E3" and not m.get("formal_forward_rows"):
-        st.caption(f"First possible next-open fill: {m.get('next_execution_date') or 'Waiting'}, only if a stock qualifies.")
+    st.write("; ".join(f"{'TRIM' if t.get('is_trim') else t['action']} {t.get('ticker') or t.get('symbol')}" for t in trades))
 
 
 def _plan(m):
     if m["name"] == "E3":
+        st.caption(f"Saved after {m.get('signal_date') or 'Waiting'} close · eligible execution: {m.get('next_execution_date') or 'Waiting'} open")
         _data(m["next_plan"], "No E3 next-open buys or sells are currently planned.")
     else:
-        st.write("**Saved targets:** " + m["signal_summary"])
-        st.write(f"**Execution:** {m.get('execution_status') or 'Waiting'} · {m.get('execution_date') or 'Waiting'}")
-    st.caption("A saved plan is not a completed trade. Both strategies use close-time decisions and a later market open.")
+        if str(m.get("execution_status") or "").lower().startswith("executed"):
+            st.info("No pending allocation is published. The latest saved allocation has already executed.")
+            if m.get("next_signal_date"):
+                st.caption(f"Next expected signal: {m['next_signal_date']} close · eligible execution: {m.get('next_execution_date') or 'Waiting'} open, conditional on a valid signal.")
+        else:
+            st.write("**Saved targets:** " + m["signal_summary"])
+            st.write(f"**Execution:** {m.get('execution_status') or 'Waiting'} · {m.get('execution_date') or 'Waiting'}")
 
 
 def _trades(m):
@@ -198,7 +192,7 @@ def _signal_table(record):
              "Next-open Decision": "BUY" if s["symbol"] in entries else ("SELL" if s["symbol"] in record["plan"].get("exits", []) else "No new order")}
             for s in sorted(record["stocks"], key=lambda s: (-s["score"], s["symbol"]))]
     _data(rows)
-    st.caption(f"Saved {record['recorded_at']} after {record['signal_date']} close · eligible execution: {record['execution_date']} open. These are saved signals, not fresh recalculations.")
+    st.caption(f"Saved {display_timestamp(record['recorded_at'])} · {record['signal_date']} close → {record['execution_date']} open.")
 
 
 def _signals(m):
@@ -228,26 +222,26 @@ def _events(m):
 def _health(m):
     delayed = m.get("delayed")
     blocked = bool(m.get("trading_blocked")) or not m.get("ledger_verified")
-    _metrics([("System", "Needs attention" if delayed or blocked else "Verified display"),
-              ("Strategy", "Invested" if m["positions"] else "Cash / waiting"),
-              ("Evidence", "Building sample" if m.get("rolling_sharpe") is None else "252-session window available"),
-              ("Ledger", "Verified" if m.get("ledger_verified") else "Unavailable")])
+    if not blocked and not delayed:
+        st.write("**Saved data is verified and current.** " +
+                 ("Performance history is still too short to evaluate." if m.get("rolling_sharpe") is None else "A full rolling performance window is available for review."))
+    _metrics([("System", "Check required" if delayed or blocked else "Verified"),
+              ("Position", "Invested" if m["positions"] else "Cash")])
     if blocked:
         st.error(m.get("integrity_error") or m.get("execution_status") or "Check the underlying cycle.")
     elif delayed:
         st.warning(m["freshness_message"])
-    else:
-        st.info(m["freshness_message"])
     st.caption("A verified display confirms its saved evidence; it does not prove the next collector run will succeed.")
     for warning in m.get("warnings", []):
-        st.warning(str(warning))
+        if str(warning) != "Insufficient Forward history to calculate 12-month Rolling Sharpe":
+            st.warning(str(warning))
 
 
 def _pipeline(m):
     timeline([("Data", m.get("valuation_date") or "Waiting"),
               ("Signal", m.get("signal_date") or "Not generated"),
               ("Execution", m.get("execution_status") or "Waiting"),
-              ("Dashboard sync", m.get("publication") or "Unavailable")])
+              ("Dashboard sync", display_timestamp(m.get("publication")))])
 
 
 def _safety(m):
@@ -267,20 +261,24 @@ def _safety(m):
 
 def _evidence(m):
     is_e3 = m["name"] == "E3"
-    _metrics([("SPY regime", "Not an entry filter" if is_e3 else m.get("market_regime") or "Waiting"),
-              ("V7 / V8 agreement", "Not applicable" if is_e3 else ("Waiting" if m.get("agreement_count") is None else str(m["agreement_count"]))),
-              ("Forward Drawdown", pct(m.get("max_drawdown"))),
-              ("Recorded close sessions" if is_e3 else "Official Allocation Batches", str(m.get("formal_forward_rows") or 0)),
-              ("12M Rolling Sharpe", "Waiting" if m.get("rolling_sharpe") is None else f"{m['rolling_sharpe']:.2f}"),
-              ("Forward vs Backtest", "Not configured" if is_e3 else ("Waiting" if m.get("sharpe_deviation") is None else f"{m['sharpe_deviation']:+.2f} Sharpe")),
-              ("T+1 Return", pct(m.get("cumulative_return") if is_e3 else m.get("t1_return"))),
-              ("T+2 / Difference", "Not collected" if is_e3 else ("Waiting" if m.get("t2_return") is None else f"{pct(m['t2_return'])} / {pct(m.get('t1_t2_spread'), points=True)}"))])
     if is_e3:
-        _metrics([("Exposure", pct(m.get("exposure"))), ("Completed trades", str(m.get("closed_trades") or 0)),
+        _metrics([("Forward Drawdown", pct(m.get("max_drawdown"))),
+                  ("Recorded close sessions", str(m.get("formal_forward_rows") or 0)),
+                  ("12M Rolling Sharpe", "Waiting" if m.get("rolling_sharpe") is None else f"{m['rolling_sharpe']:.2f}"),
+                  ("Exposure", pct(m.get("exposure"))),
+                  ("Completed trades", str(m.get("closed_trades") or 0)),
                   ("Win rate", "Waiting" if m.get("win_rate") is None else pct(m["win_rate"]))])
-        st.caption("SPY filtering, V7/V8 agreement, a historical Sharpe reference and T+2 simulation are not part of the frozen E3 experiment.")
-    else:
-        st.caption(f"Historical reference only: Frozen V12 Sharpe {HISTORICAL_SHARPE:.2f}. At -20% drawdown, research review begins; the rule is not automatically altered.")
+        st.caption("E3 evaluates stock pullbacks independently. V7/V8 agreement and T+2 comparison belong to V12.")
+        return
+    _metrics([("SPY regime", m.get("market_regime") or "Waiting"),
+              ("V7 / V8 agreement", "Waiting" if m.get("agreement_count") is None else str(m["agreement_count"])),
+              ("Forward Drawdown", pct(m.get("max_drawdown"))),
+              ("Official Allocation Batches", str(m.get("formal_forward_rows") or 0)),
+              ("12M Rolling Sharpe", "Waiting" if m.get("rolling_sharpe") is None else f"{m['rolling_sharpe']:.2f}"),
+              ("Forward vs Backtest", "Waiting" if m.get("sharpe_deviation") is None else f"{m['sharpe_deviation']:+.2f} Sharpe"),
+              ("T+1 Return", pct(m.get("t1_return"))),
+              ("T+2 / Difference", "Waiting" if m.get("t2_return") is None else f"{pct(m['t2_return'])} / {pct(m.get('t1_t2_spread'), points=True)}")])
+    st.caption(f"Historical reference only: Frozen V12 Sharpe {HISTORICAL_SHARPE:.2f}. At -20% drawdown, research review begins; the rule is not automatically altered.")
     st.info("Short forward samples cannot establish an edge. A waiting metric is not evidence of failure, and performance never changes these frozen rules automatically.")
 
 
@@ -316,8 +314,6 @@ def _balances(m):
 
 
 def _dividends(m):
-    _metrics([("Cash dividends received", money(m.get("dividends_received"))),
-              ("Nonspendable receivable", money(m.get("dividends_receivable")))])
     if m["name"] == "E3":
         st.write("The frozen E3 runner accrues captured dividends as receivables. It has no dividend-payment-date cash process; no cash payment is invented here.")
     else:
@@ -325,11 +321,9 @@ def _dividends(m):
 
 
 SECTIONS = {
-    "overview": [("Performance", _performance), ("Recorded equity curves", _chart), ("Comparison accounts", _comparison_accounts),
-                 ("Holdings, signal and execution", _posture), ("Why these stocks", _reasons),
-                 ("Portfolio P/L & Contribution", _holdings), ("Latest execution", _latest_execution),
-                 ("Automation timeline", _timeline)],
-    "activity": [("Next-open plans", _plan), ("Paper fills and execution audit", _trades),
+    "overview": [("Performance", _performance), ("Recorded equity curves", _chart),
+                 ("Current holdings", _holdings), ("Comparison accounts", _comparison_accounts)],
+    "activity": [("Upcoming plans", _plan), ("Last completed execution", _latest_execution), ("Paper fills and execution audit", _trades),
                  ("Saved signal evidence", _signals), ("Recent system events", _events)],
     "health": [("Current interpretation", _health), ("Automation pipeline", _pipeline),
                ("System safety checks", _safety), ("Strategy evidence", _evidence), ("Frozen rules", _rules)],
@@ -341,26 +335,22 @@ SECTIONS = {
 def render_paired_page(page, v12, e3):
     """Use the same section and component for each independent strategy."""
     models = (v12_model(v12), e3_model(e3))
-    st.caption("V12 on the left · E3 on the right. On small screens, each matching section stacks vertically. Accounts and start dates remain separate.")
     def paired_section(heading, render):
         st.subheader(heading)
         columns = st.columns(2, gap="large")
         for column, model in zip(columns, models):
             with column, st.container(border=True):
                 st.markdown(f'<div class="paired-label {model["name"].lower()}">{html.escape(model["name"])}</div>', unsafe_allow_html=True)
+                st.caption("Monthly momentum · Official portfolio" if model["name"] == "V12" else "Pullback · Independent experiment")
                 if not model["available"]:
                     st.error(f"{model['name']} data unavailable. No substitute balance or performance is shown.")
                 else:
                     render(model)
 
     sections = SECTIONS[page]
-    if page == "overview":
-        # Keep the daily readout first; supporting evidence remains available in matching panels.
-        for heading, render in sections[:2]:
-            paired_section(heading, render)
-        with st.expander("More strategy detail — holdings, decisions, accounting and timelines", expanded=False):
-            for heading, render in sections[2:]:
+    for heading, render in sections:
+        if heading in {"Comparison accounts", "Automation pipeline", "System safety checks", "Frozen rules", "Saved signal evidence", "Recent system events"}:
+            with st.expander(heading, expanded=False):
                 paired_section(heading, render)
-    else:
-        for heading, render in sections:
+        else:
             paired_section(heading, render)

@@ -153,10 +153,10 @@ def _e3_view():
 
 
 def render_overview() -> None:
-    _header("Paper Trading", "V12 + E3 Overview", "Matching details for both independent paper strategies.")
+    _header("Paper Trading", "Portfolio Overview", "V12 monthly momentum and the independent E3 pullback experiment.")
     _paper_banner()
     state, e3 = _dashboard_state(), _e3_view()
-    st.info("Returns cover each account's own start date. V12 and E3 are separate accounts; a fair comparison requires matching dates and enough forward observations.")
+    st.caption("Independent accounts with different start dates. Returns are not a direct strategy ranking.")
     render_paired_page("overview", state, e3)
 
 

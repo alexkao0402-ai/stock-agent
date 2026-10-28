@@ -4,6 +4,7 @@ from __future__ import annotations
 import html
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 from src.trading_calendar import is_session, previous_session
@@ -107,7 +108,10 @@ def inject_style() -> None:
         div[data-testid="stMetric"] { min-height:116px; border:1px solid var(--line); border-radius:12px; padding:.95rem; background:var(--surface); box-shadow:none; transition:border-color 180ms ease; }
         div[data-testid="stMetric"]:hover { border-color:rgba(255,255,255,.15); }
         div[data-testid="stMetricLabel"] { color:var(--text-secondary); }
-        div[data-testid="stMetricValue"] { color:var(--text); font-size:clamp(1.3rem,2.6vw,1.95rem); font-variant-numeric:tabular-nums; }
+        div[data-testid="stMetricValue"] { color:var(--text); font-size:1.4rem; font-variant-numeric:tabular-nums; }
+        [data-testid="stMetricValue"] > div, [data-testid="stMetricLabel"] p {
+          white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere;
+        }
         div[data-testid="stMetricDelta"] { font-variant-numeric:tabular-nums; }
         div[data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:10px; overflow-x:auto; }
         div[data-testid="stVerticalBlockBorderWrapper"] { border-color:var(--line) !important; background:var(--surface); border-radius:12px !important; }
@@ -118,8 +122,8 @@ def inject_style() -> None:
         .event-card a:hover { color:var(--accent); }
         .event-meta { color:var(--muted); font-size:.78rem; margin-top:.35rem; }
         .stButton > button { border-radius:9px; border:1px solid var(--line); transition:all 180ms ease; }
-        .stButton > button[kind="primary"] { background:var(--accent); color:#07130d; border-color:var(--accent); font-weight:700; }
-        .stButton > button[kind="primary"]:hover { background:#4be49a; border-color:#4be49a; }
+        .stButton > button[kind="primary"], [data-testid="stFormSubmitButton"] button[kind="primaryFormSubmit"] { background:var(--accent); color:#07130d; border-color:var(--accent); font-weight:700; }
+        .stButton > button[kind="primary"]:hover, [data-testid="stFormSubmitButton"] button[kind="primaryFormSubmit"]:hover { background:#4be49a; border-color:#4be49a; }
         [data-testid="stAlert"] { border-radius:10px; border:1px solid var(--line-soft); }
         code, pre, [data-testid="stDataFrame"] { font-variant-numeric:tabular-nums; }
         @media (max-width:720px) {
@@ -177,6 +181,19 @@ def status_badge(status: str, label: str) -> None:
 
 def money(value: float | None) -> str:
     return "—" if value is None else f"${value:,.2f}"
+
+
+def display_timestamp(value: str | None) -> str:
+    """Format an explicitly zoned publication time; never guess a missing zone."""
+    if not value:
+        return "Unavailable"
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return "Unavailable"
+        return parsed.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%b %d, %Y · %I:%M %p %Z")
+    except (ValueError, TypeError):
+        return "Unavailable"
 
 
 def signed_money(value: float | None) -> str:

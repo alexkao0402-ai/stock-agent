@@ -133,7 +133,34 @@ class PairedPageTests(unittest.TestCase):
         self.assertEqual(returns, ["-5.26%", "Waiting"])
         app = self.render("health")
         agreement = [m.value for m in app.metric if m.label == "V7 / V8 agreement"]
-        self.assertEqual(agreement[-1], "Not applicable")
+        self.assertEqual(len(agreement), 1)  # V12 only; no irrelevant E3 placeholder
+
+    def test_one_close_is_not_rendered_as_an_equity_trend(self):
+        model = e3_model(startup_view())
+        model.update(formal_forward_rows=1, curve=pd.DataFrame([
+            {"date": "2026-10-27", "series": "E3", "value": 10000}]))
+        app = self.render("overview", model)
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(len(app.get("plotly_chart")), 1)
+        self.assertTrue(any("First close recorded" in item.value for item in app.info))
+
+    def test_completed_v12_allocation_is_not_an_upcoming_order(self):
+        from streamlit.testing.v1 import AppTest
+        model = v12_model(v12_view())
+        model.update(execution_status="Executed", execution_date="2026-10-01", signal_summary="OLD TARGET")
+        with patch("src.strategy_pages.v12_model", return_value=model), \
+             patch("src.strategy_pages.e3_model", return_value=e3_model(startup_view())):
+            app = AppTest.from_string("from src.strategy_pages import render_paired_page\nrender_paired_page('activity', {}, None)").run(timeout=25)
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(any("already executed" in item.value for item in app.info))
+        self.assertFalse(any("Saved targets:** OLD TARGET" in item.value for item in app.markdown))
+
+    def test_publication_times_use_explicit_local_zone_and_handle_dst(self):
+        from src.dashboard_ui import display_timestamp
+        self.assertEqual(display_timestamp("2026-10-28T02:31:08+00:00"), "Oct 27, 2026 · 07:31 PM PDT")
+        self.assertEqual(display_timestamp("2026-11-02T02:31:08+00:00"), "Nov 01, 2026 · 06:31 PM PST")
+        self.assertEqual(display_timestamp("2026-10-27T12:00:00"), "Unavailable")
+        self.assertEqual(display_timestamp("invalid"), "Unavailable")
 
     def test_unavailable_e3_does_not_hide_or_copy_v12(self):
         app = self.render("overview", e3_model(None))
