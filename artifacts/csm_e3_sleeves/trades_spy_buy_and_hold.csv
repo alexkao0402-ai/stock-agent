@@ -1,0 +1,2 @@
+signal_date,execution_date,date,action,execution_price,shares,transaction_cost,reason,symbol,strategy
+2021-10-27,2021-10-28,2021-10-28,buy,426.20583279058235,23.43940232962184,9.990009990009993,strategy_signal,SPY,Buy & Hold

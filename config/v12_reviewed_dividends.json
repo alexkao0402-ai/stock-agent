@@ -1,0 +1,22 @@
+{
+  "actions": [
+    {
+      "action_id": "MU-2026-10-14-ORDINARY-USD",
+      "ticker": "MU",
+      "issuer_cik": 723125,
+      "kind": "ORDINARY_CASH",
+      "currency": "USD",
+      "amount_per_share": 0.15,
+      "ex_date": "2026-10-14",
+      "record_date": "2026-10-14",
+      "pay_date": "2026-10-29",
+      "source_url": "https://www.sec.gov/Archives/edgar/data/723125/000072312526000018/a2026q4ex991-pressrelease.htm",
+      "source_sha256": "a438503d44cd009b5bc5f55ed2707312ca91905016851b5fac0f39780f7352ab",
+      "ex_date_basis": "Yahoo action date corroborated with issuer record date and FINRA ordinary-distribution T+1 rule",
+      "rule_source": "https://www.finra.org/sites/default/files/2024-02/Regulatory_Notice_24-04.pdf",
+      "reviewer": "Codex source verification; user-authorized accounting repair",
+      "reviewed_at": "2026-10-15T23:27:43+00:00",
+      "payment_policy": "Gross USD simulated cash at pay-date accounting close; no tax or broker settlement claim"
+    }
+  ]
+}

@@ -1,0 +1,143 @@
+{
+  "sources": [
+    {
+      "symbol": "AAPL",
+      "cached_at": "2026-10-26T17:44:15.373326",
+      "sessions": 1253,
+      "sha256": "65b682ab8c68d63ee1f6030ebd9ea9348ee6b30bf88475d4a1e31ef1c25567d9"
+    },
+    {
+      "symbol": "MSFT",
+      "cached_at": "2026-10-26T17:44:15.660074",
+      "sessions": 1253,
+      "sha256": "6431d1fd759893a6c347286806fdf486563293b85c19d15f1c022001b4ae2601"
+    },
+    {
+      "symbol": "NVDA",
+      "cached_at": "2026-10-26T17:44:15.983150",
+      "sessions": 1253,
+      "sha256": "332f81254c10e08e94366fe2ef1f965777c49b4a90357566368966dc00107346"
+    },
+    {
+      "symbol": "AMZN",
+      "cached_at": "2026-10-26T17:44:16.325989",
+      "sessions": 1253,
+      "sha256": "d8fcd359799a854633a6c06ae3b071e19202f750ef9c2ef22817a24a636330c4"
+    },
+    {
+      "symbol": "GOOGL",
+      "cached_at": "2026-10-26T17:44:16.610694",
+      "sessions": 1253,
+      "sha256": "659eee7de6e5490b4ee27afa8c223f6c4bbe516d971838a1175d0e6cc698e142"
+    },
+    {
+      "symbol": "META",
+      "cached_at": "2026-10-26T17:44:16.872890",
+      "sessions": 1253,
+      "sha256": "8d4525974ffef186dbc2dc5a15bc7308c49486dca0a6d078216659cb1c07a745"
+    },
+    {
+      "symbol": "AVGO",
+      "cached_at": "2026-10-26T17:44:17.120262",
+      "sessions": 1253,
+      "sha256": "cfac03e662d9b276e9528ecbd6b3e5c84bb2d0820c1877701418463ff9dd1a4f"
+    },
+    {
+      "symbol": "JPM",
+      "cached_at": "2026-10-26T17:44:17.435375",
+      "sessions": 1253,
+      "sha256": "574c57467f7a5329fd1db67d78e5fe04eaa52f4ea71574d0a3905a7d6bfcd707"
+    },
+    {
+      "symbol": "V",
+      "cached_at": "2026-10-26T17:44:17.729929",
+      "sessions": 1253,
+      "sha256": "47ab5b0da0a9714567e9865dcc1777e463b4fc471e27408a8671a30d16cf1c3f"
+    },
+    {
+      "symbol": "WMT",
+      "cached_at": "2026-10-26T17:44:18.026822",
+      "sessions": 1253,
+      "sha256": "ad63343f318c8c010aaf6305b413977cf0040337d784510150e31202b9c7284a"
+    },
+    {
+      "symbol": "SPY",
+      "cached_at": "2026-10-26T17:44:18.300792",
+      "sessions": 1253,
+      "sha256": "594291dd509f68b9abfe9df8b1ac36407491d57147865a16e36e03ef342b8d8b"
+    }
+  ],
+  "original_sample_end": "2026-10-23",
+  "new_forward_observations": 0,
+  "split": {
+    "Full": {
+      "first": "2021-10-28",
+      "last": "2026-10-23",
+      "returns": 1252
+    },
+    "Research": {
+      "first": "2021-10-28",
+      "last": "2025-04-25",
+      "returns": 876
+    },
+    "Explored OOS": {
+      "first": "2025-04-28",
+      "last": "2026-10-23",
+      "returns": 376
+    }
+  },
+  "overlapping_research_oos_return_dates": 0,
+  "scale_checks": [
+    {
+      "CSM_initial_weight": 0.5,
+      "sleeve": "CSM",
+      "max_scale_error_dollars": 0.0
+    },
+    {
+      "CSM_initial_weight": 0.5,
+      "sleeve": "E3",
+      "max_scale_error_dollars": 0.0
+    },
+    {
+      "CSM_initial_weight": 0.25,
+      "sleeve": "CSM",
+      "max_scale_error_dollars": 0.0
+    },
+    {
+      "CSM_initial_weight": 0.25,
+      "sleeve": "E3",
+      "max_scale_error_dollars": 1.0913936421275139e-11
+    },
+    {
+      "CSM_initial_weight": 0.75,
+      "sleeve": "CSM",
+      "max_scale_error_dollars": 1.8189894035458565e-11
+    },
+    {
+      "CSM_initial_weight": 0.75,
+      "sleeve": "E3",
+      "max_scale_error_dollars": 0.0
+    }
+  ],
+  "checks": [
+    "OHLC finite and positive",
+    "identical price calendars",
+    "all fills T+1",
+    "all prices match adverse next open",
+    "commission reconciles",
+    "NAV reconstructed from fills",
+    "no negative cash",
+    "all segment returns compound to full return",
+    "each return assigned to exactly one split"
+  ],
+  "sortino_definition": "mean daily return / RMS of min(return,0) over all sessions * sqrt(252)",
+  "limits": [
+    "present-day selected universe",
+    "historically adjusted OHLC, not PIT raw quotes",
+    "explored OOS",
+    "200-session warmup counted in headline sample",
+    "combination may have four distinct names",
+    "no statistical confidence claim",
+    "independent sleeve fills charged without netting"
+  ]
+}

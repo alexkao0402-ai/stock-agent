@@ -1,522 +1,341 @@
-# app.py — UI V2
-# 簡潔、高級感、少分頁版本
+"""Read-only Streamlit dashboard for independent Frozen V12 and E3 accounts."""
+from __future__ import annotations
 
-import time
+import html
+from pathlib import Path
+from typing import Any
+
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
-from src.stock_data import (
-    get_daily_stock_data,
-    clean_stock_data,
-    get_news_sentiment,
-    get_company_overview,
-    get_long_history_stock_data,
-    get_crypto_daily_data,
-    clean_crypto_data,
+from src.ai_analysis import (
+    compact_ai_provider,
+    generate_compact_summary,
+    has_compact_ai_key,
 )
-from src.ai_analysis import generate_report, extract_structured_data
-from src.prediction_tracker import save_prediction, list_predictions, check_prediction_outcome
-from src.strategy_v1 import (
-    add_trend_filter,
-    add_momentum,
-    add_relative_strength,
-    add_entry_exit_signals,
-    run_backtest_v1,
-    run_backtest_v1_with_equity_curve,
-    run_backtest_v1_with_takeprofit_v2,
-    run_backtest_v1_with_trailing_exit,
-    calculate_buy_and_hold,
-    calculate_performance_metrics,
-    calculate_risk_metrics,
-    build_comparison_row,
-    build_trade_diagnostics,
+from src.config import get_secret
+from src.market_intelligence import market_payload
+from src.market_search import render_market_search
+from src.e3_dashboard import dashboard_view
+from src.e3_dashboard_snapshot import E3DisplayError
+from src.strategy_pages import render_paired_page
+from src.dashboard_cloud_snapshot import (
+    DashboardSnapshotError,
+    load_signed_snapshot,
+    load_supabase_snapshot,
 )
-from src.regime_analysis import build_regime_series
+from src.dashboard_read_model import (
+    DEFAULT_LEDGER_PATH,
+    build_dashboard_snapshot,
+)
+from src.dashboard_ui import (
+    header as _header,
+    inject_style as _inject_style,
+    money as _money,
+    number as _number,
+    paper_banner as _paper_banner,
+    pct as _pct,
+)
 
 
-# ============================================================
-# PAGE CONFIG
-# ============================================================
+APP_TITLE = "V12 + E3 Dashboard"
+COLORS = {"V12": "#39D98A", "SPY": "#D4D4D8", "QQQ": "#818CF8"}
+
 
 st.set_page_config(
-    page_title="AI Stock Research",
-    page_icon="📈",
+    page_title=APP_TITLE,
+    page_icon="◈",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="auto",
 )
 
 
-# ============================================================
-# LIGHT UI POLISH — 不改功能，只讓介面更乾淨
-# ============================================================
-
-st.markdown(
-    """
-    <style>
-        .block-container {
-            max-width: 1380px;
-            padding-top: 2.2rem;
-            padding-bottom: 4rem;
-        }
-
-        [data-testid="stMetric"] {
-            background: rgba(255,255,255,0.025);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 14px;
-            padding: 14px 16px;
-        }
-
-        [data-testid="stMetricLabel"] {
-            opacity: 0.72;
-        }
-
-        div[data-testid="stTabs"] button {
-            font-size: 0.98rem;
-        }
-
-        .section-title {
-            font-size: 1.35rem;
-            font-weight: 650;
-            margin-top: 0.5rem;
-            margin-bottom: 0.25rem;
-        }
-
-        .muted {
-            color: rgba(255,255,255,0.58);
-            font-size: 0.9rem;
-        }
-
-        .hero-symbol {
-            font-size: 2.25rem;
-            font-weight: 750;
-            letter-spacing: -0.04em;
-            margin-bottom: 0;
-        }
-
-        .hero-company {
-            color: rgba(255,255,255,0.60);
-            margin-top: -0.25rem;
-        }
-
-        .disclaimer {
-            color: rgba(255,255,255,0.42);
-            font-size: 0.78rem;
-            margin-top: 1.5rem;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+def _ledger_path() -> Path:
+    configured = get_secret("V12_LEDGER_PATH")
+    return Path(configured) if configured else DEFAULT_LEDGER_PATH
 
 
-# ============================================================
-# HEADER
-# ============================================================
-
-st.markdown('<div class="hero-symbol">AI Stock Research</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="hero-company">Systematic research · AI analysis · quantitative backtesting</div>',
-    unsafe_allow_html=True,
-)
-st.markdown("")
-
-
-# ============================================================
-# SEARCH
-# ============================================================
-
-with st.container(border=True):
-    c1, c2 = st.columns([5, 1])
-    with c1:
-        symbol_input = st.text_input(
-            "Ticker",
-            placeholder="Enter a ticker, e.g. NVDA",
-            label_visibility="collapsed",
-        )
-    with c2:
-        analyze_clicked = st.button(
-            "Analyze",
-            use_container_width=True,
-            type="primary",
-        )
-
-
-# ============================================================
-# ANALYSIS FLOW
-# ============================================================
-
-if analyze_clicked:
-    if not symbol_input.strip():
-        st.warning("請先輸入股票代號。")
-        st.stop()
-
-    symbol = symbol_input.strip().upper()
-
-    with st.spinner(f"Loading {symbol} price data..."):
-        raw_data = get_daily_stock_data(symbol)
-
-    if "Time Series (Daily)" not in raw_data:
-        st.error("抓取股價資料失敗，請確認股票代號是否正確，或稍後再試。")
-        st.stop()
-
-    df = clean_stock_data(raw_data)
-
-    with st.spinner("Loading related news..."):
-        time.sleep(15)
-        news_list = get_news_sentiment(symbol, limit=20)
-
-    with st.spinner("Loading company fundamentals..."):
-        time.sleep(15)
-        overview = get_company_overview(symbol)
-
-    current_price = df["close"].iloc[-1]
-
-    with st.spinner("AI is analyzing the company..."):
-        report = generate_report(symbol, df, news_list, overview)
-
-    with st.spinner("Structuring the analysis..."):
-        structured = extract_structured_data(symbol, current_price, report)
-
-    saved_path = save_prediction(symbol, current_price, structured, report)
-
-    # ========================================================
-    # COMPANY HERO
-    # ========================================================
-
-    company_name = overview.get("公司名稱", symbol) if overview else symbol
-    industry = overview.get("產業別", "") if overview else ""
-
-    st.markdown("---")
-
-    h1, h2 = st.columns([3, 1])
-    with h1:
-        st.markdown(f'<div class="hero-symbol">{symbol}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="hero-company">{company_name} · {industry}</div>', unsafe_allow_html=True)
-    with h2:
-        st.metric("Latest Close", f"${current_price:,.2f}")
-
-    # ========================================================
-    # KPI STRIP
-    # ========================================================
-
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Market Cap", overview.get("市值", "N/A") if overview else "N/A")
-    k2.metric("P / E", overview.get("本益比", "N/A") if overview else "N/A")
-    k3.metric("EPS", overview.get("每股盈餘", "N/A") if overview else "N/A")
-    k4.metric("52W High", overview.get("52週最高價", "N/A") if overview else "N/A")
-    k5.metric("52W Low", overview.get("52週最低價", "N/A") if overview else "N/A")
-
-    st.caption(
-        f"Data: {len(df):,} price records · {len(news_list):,} news items · "
-        f"Saved prediction: {saved_path}"
+def _dashboard_state() -> dict[str, Any]:
+    supabase_url = get_secret("SUPABASE_URL")
+    supabase_key = get_secret("SUPABASE_SECRET_KEY") or get_secret(
+        "SUPABASE_SERVICE_ROLE_KEY"
     )
-
-    # ========================================================
-    # ONLY 3 MAIN AREAS
-    # ========================================================
-
-    tab_overview, tab_strategy, tab_research = st.tabs(
-        ["Overview", "Quant Strategy", "Research & Data"]
+    remote_source = get_secret("V12_DASHBOARD_SNAPSHOT_URL") or get_secret(
+        "V12_DASHBOARD_SNAPSHOT_PATH"
     )
-
-    # ========================================================
-    # TAB 1 — OVERVIEW
-    # ========================================================
-
-    with tab_overview:
-        left, right = st.columns([1.55, 1])
-
-        with left:
-            st.markdown('<div class="section-title">Price & AI View</div>', unsafe_allow_html=True)
-            chart_data = df.set_index("date")[["close"]]
-            st.line_chart(chart_data, height=360)
-
-            with st.container(border=True):
-                st.markdown("#### AI Research Report")
-                st.markdown(report)
-
-        with right:
-            st.markdown('<div class="section-title">Recent News</div>', unsafe_allow_html=True)
-            st.caption("Showing the latest 5 items")
-
-            if news_list:
-                for n in news_list[:5]:
-                    with st.container(border=True):
-                        st.markdown(f"**{n['title']}**")
-                        st.caption(
-                            f"{n['time_published']} · {n['source']} · "
-                            f"{n['overall_sentiment_label']}"
-                        )
-            else:
-                st.info("目前沒有新聞資料。")
-
-            with st.expander("View all news"):
-                for n in news_list:
-                    st.markdown(f"**{n['title']}**")
-                    st.caption(
-                        f"{n['time_published']} · {n['source']} · "
-                        f"{n['overall_sentiment_label']}"
-                    )
-
-    # ========================================================
-    # TAB 2 — QUANT STRATEGY
-    # ========================================================
-
-    with tab_strategy:
-        st.markdown('<div class="section-title">Strategy V1</div>', unsafe_allow_html=True)
-        st.caption(
-            "MA200 trend filter + 6-month momentum + relative strength vs BTC. "
-            "Signals execute at the next day's open."
+    if not supabase_url and not supabase_key and not remote_source:
+        return build_dashboard_snapshot(_ledger_path())
+    try:
+        if bool(supabase_url) != bool(supabase_key):
+            raise DashboardSnapshotError("Supabase URL and secret key must both be configured")
+        if supabase_url and supabase_key:
+            return load_supabase_snapshot(
+                supabase_url,
+                supabase_key,
+                get_secret("V12_DASHBOARD_SYNC_SECRET") or "",
+                bucket=get_secret("V12_DASHBOARD_SUPABASE_BUCKET") or "v12-dashboard",
+                object_path=get_secret("V12_DASHBOARD_SUPABASE_OBJECT")
+                or "v12_dashboard.json",
+            )
+        return load_signed_snapshot(
+            remote_source,
+            get_secret("V12_DASHBOARD_SYNC_SECRET") or "",
         )
+    except DashboardSnapshotError as exc:
+        state = build_dashboard_snapshot(Path("__cloud_snapshot_unavailable__.sqlite3"))
+        state.update({
+            "health_status": "ERROR",
+            "health_label": "Sync Error",
+            "trading_blocked": True,
+            "integrity_error": str(exc),
+            "warnings": ["The cloud Dashboard snapshot could not be verified"],
+        })
+        return state
 
-        with st.spinner("Running quantitative backtest..."):
-            v1_stock_df = get_long_history_stock_data(symbol, period="2y")
 
-        if v1_stock_df.empty or len(v1_stock_df) < 200:
-            st.warning("歷史資料不足 200 天，無法計算 MA200。")
+@st.cache_data(ttl=120, show_spinner=False)
+def _market_payload(symbol: str) -> dict[str, Any]:
+    return market_payload(symbol)
+
+
+def _chart_layout(*, height: int) -> dict[str, Any]:
+    return {
+        "height": height,
+        "margin": {"l": 8, "r": 8, "t": 12, "b": 8},
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "#0d0d10",
+        "font": {"color": "#a1a1aa", "family": "Inter, Segoe UI, sans-serif"},
+        "hovermode": "x unified",
+        "hoverlabel": {"bgcolor": "#16161a", "bordercolor": "#27272a"},
+        "xaxis": {"gridcolor": "rgba(255,255,255,.055)", "zeroline": False},
+        "yaxis": {
+            "gridcolor": "rgba(255,255,255,.055)",
+            "zeroline": False,
+        },
+        "legend": {"orientation": "h", "y": 1.08},
+    }
+
+
+def _rebalance_change_summary(trades: list[dict[str, Any]]) -> str:
+    exited = [row["ticker"] for row in trades if row["action"] == "SELL" and not row.get("is_trim")]
+    trimmed = [
+        f'{row["ticker"]} to {float(row.get("target_weight") or 0.0):.0%}'
+        for row in trades if row.get("is_trim")
+    ]
+    opened = [
+        f'{row["ticker"]} at {float(row.get("target_weight") or 0.0):.0%}'
+        for row in trades
+        if row["action"] == "BUY" and float(row.get("before_shares") or 0.0) <= 1e-9
+    ]
+    topped_up = [
+        f'{row["ticker"]} toward {float(row.get("target_weight") or 0.0):.0%}'
+        for row in trades
+        if row["action"] == "BUY" and float(row.get("before_shares") or 0.0) > 1e-9
+    ]
+    changes = []
+    if exited:
+        changes.append(f'exited {", ".join(exited)}')
+    if trimmed:
+        changes.append(f'trimmed {", ".join(trimmed)}')
+    if opened:
+        changes.append(f'opened {", ".join(opened)}')
+    if topped_up:
+        changes.append(f'topped up {", ".join(topped_up)}')
+    return "V12 " + "; ".join(changes) + "." if changes else "No allocation changes were required."
+
+
+def _e3_view():
+    try:
+        return dashboard_view()
+    except E3DisplayError:
+        return None
+
+
+def render_overview() -> None:
+    _header("Paper Trading", "Portfolio Overview", "V12 monthly momentum and the independent E3 pullback experiment.")
+    _paper_banner()
+    state, e3 = _dashboard_state(), _e3_view()
+    st.caption("Independent accounts with different start dates. Returns are not a direct strategy ranking.")
+    render_paired_page("overview", state, e3)
+
+
+def render_activity() -> None:
+    _header("Execution", "V12 + E3 Trading Activity", "Compare saved plans, paper fills, costs, signals and ledger events side by side.")
+    _paper_banner()
+    render_paired_page("activity", _dashboard_state(), _e3_view())
+
+
+def render_market() -> None:
+    _header("Market Intelligence", "Market Intelligence", "Prices, earnings, material news, and company filings in one concise view.")
+    symbol = render_market_search()
+    if not symbol:
+        return
+
+    with st.spinner(f"Loading market data for {symbol}…"):
+        payload = _market_payload(symbol)
+    prices = payload["prices"]
+    if prices.empty:
+        st.warning("Prices are temporarily unavailable. Other available company information is shown below.")
+    overview = payload["overview"] or {}
+    current = float(prices["close"].iloc[-1]) if not prices.empty else None
+    previous = float(prices["close"].iloc[-2]) if len(prices) > 1 else current
+    daily_change = current / previous - 1 if current is not None and previous else None
+    company = overview.get("公司名稱") or symbol
+    st.markdown(f"### {html.escape(symbol)} · {html.escape(str(company))}")
+    price_col, meta_col = st.columns([1, 2])
+    price_col.metric("Latest Close", _money(current), f"{daily_change:+.2%}" if daily_change is not None else None)
+    meta_col.caption(f"Price source: {payload['source']} · As of {prices['date'].iloc[-1] if not prices.empty else 'Unavailable'} · Daily close, not live")
+    if not prices.empty:
+        meta_col.caption("Provider daily Close, not a total-return series. Historical split conventions may differ between providers.")
+        if (pd.Timestamp.now(tz='America/New_York').date() - pd.Timestamp(prices['date'].iloc[-1]).date()).days > 4:
+            st.warning("The latest available price is more than four calendar days old. Check the source status before relying on it.")
+    st.caption(f"Fundamentals: {payload['fundamentals_source']} · News: {payload['news_source']} · Fetched: {payload['fetched_at']}")
+    issues = [row for row in payload['provider_status'] if row['Status'] not in {'Available','No data'}]
+    if issues:
+        st.caption("Some data sources are unavailable. Available backup results are shown; see Data coverage & providers for details.")
+    cache_rows = payload.get('cache_status', [])
+    if any('Stale' in row.get('Status', '') for row in cache_rows):
+        st.warning("Some research data uses a previous successful download because refresh failed. Check retrieval times below; this is not live data.")
+    with st.expander("Data coverage & providers"):
+        st.dataframe(
+            pd.DataFrame(payload["provider_status"]),
+            width="stretch",
+            hide_index=True,
+        )
+        st.caption("Unavailable sections only limit this research view. They do not alter Frozen V12 or E3.")
+        if cache_rows:
+            st.dataframe(pd.DataFrame(cache_rows), width="stretch", hide_index=True)
+
+    if not prices.empty:
+        figure = go.Figure(go.Scatter(
+            x=pd.to_datetime(prices["date"]), y=prices["close"], mode="lines",
+            line={"color": COLORS["V12"], "width": 2.5}, fill="tozeroy", fillcolor="rgba(57,217,138,.045)",
+            hovertemplate="%{x|%Y-%m-%d}<br>$%{y:,.2f}<extra></extra>",
+        ))
+        layout = _chart_layout(height=330)
+        layout["yaxis"].update({"tickprefix": "$"})
+        figure.update_layout(**layout)
+        st.plotly_chart(figure, width="stretch", config={"displaylogo": False})
+
+    st.markdown("### Earnings & Fundamentals")
+    metrics = st.columns(5)
+    reported = {row['Metric']: row for row in payload.get('reported_financials', [])}
+    has_valuation = any(overview.get(key) is not None for key in ('市值', '本益比', '每股盈餘', '毛利率', '營業利益率'))
+    if not has_valuation and reported:
+        st.caption("SEC reported figures are shown instead of unavailable valuation metrics. These are not TTM values; each card identifies its reporting period.")
+        for column, label in zip(metrics, ('Revenue', 'Net income', 'Diluted EPS', 'Assets', 'Liabilities')):
+            row = reported.get(label, {})
+            column.metric(label, _number(row.get('Value'), currency=True),
+                          help="SEC reported USD per share" if label == 'Diluted EPS' else "SEC reported USD")
+            if row:
+                start = row.get('Period start', 'Instant')
+                period = row.get('Period end', 'Unknown')
+                column.caption(f"{start} → {period}" if start != 'Instant' else f"As of {period}")
+        with st.expander("Why are Market Cap, P/E and TTM margins unavailable?"):
+            st.caption("The valuation provider did not return these metrics. SEC statements are not a substitute for current market capitalization or TTM P/E. No estimates are invented.")
+    else:
+        metrics[0].metric("Market Cap", _number(overview.get("市值"), currency=True))
+        metrics[1].metric("P/E", _number(overview.get("本益比")))
+        metrics[2].metric("EPS (provider TTM)", _number(overview.get("每股盈餘"), currency=True))
+        metrics[3].metric("Gross Margin", "—" if overview.get("毛利率") is None else f"{overview['毛利率']:.2f}%")
+        try:
+            operating_margin = float(overview["營業利益率"])
+        except (KeyError, TypeError, ValueError):
+            operating_margin = None
+        metrics[4].metric("Operating Margin", _pct(operating_margin))
+        if not has_valuation:
+            st.info("Neither valuation metrics nor SEC financial figures are available. Missing values are not zero; see provider status above.")
+    if payload["earnings"]:
+        with st.expander("Recent / Scheduled Earnings", expanded=True):
+            st.dataframe(pd.DataFrame(payload["earnings"]).rename(columns={"date": "Date", "estimate": "EPS Estimate", "reported": "Reported EPS", "surprise": "Surprise"}), width="stretch", hide_index=True)
+    else:
+        st.caption("No earnings-date rows were returned. This does not mean the company has no earnings reports.")
+    if not overview:
+        st.warning("Fundamentals are unavailable from the current providers; missing values are not zero.")
+    if payload.get('reported_financials'):
+        st.markdown("#### SEC Reported Financials")
+        st.caption("Latest reported period for each metric, not TTM or a forecast. Periods can differ; compare the period and filing date before using these figures. USD/shares means dollars per share.")
+        st.dataframe(pd.DataFrame(payload['reported_financials']), width="stretch", hide_index=True,
+                     column_config={'Source': st.column_config.LinkColumn('SEC filing')})
+
+    news_col, filing_col = st.columns(2)
+    with news_col:
+        st.markdown("### Latest News")
+        st.caption("Only dated headlines from the last 7 days explicitly matching the company or ticker are shown. Identifiable quote, option-contract, search and shopping pages are excluded. This checks headline relevance, not full-text accuracy or materiality; open the source to confirm.")
+        if payload["news"]:
+            for item in payload["news"][:5]:
+                title = html.escape(str(item.get("title") or "Untitled"))
+                url = html.escape(str(item.get("url") or ""), quote=True)
+                link = f'<a href="{url}" target="_blank">{title}</a>' if url else title
+                meta = " · ".join(filter(None, [str(item.get("source") or ""), str(item.get("time_published") or ""), str(item.get("relevance_reason") or "")]))
+                st.markdown(f'<div class="event-card">{link}<div class="event-meta">{html.escape(meta)}</div></div>', unsafe_allow_html=True)
         else:
-            crypto_df = clean_crypto_data(get_crypto_daily_data("BTC", "USD"))
-
-            v1_stock_df = add_trend_filter(v1_stock_df)
-            v1_stock_df = add_momentum(v1_stock_df)
-            v1_stock_df = add_relative_strength(v1_stock_df, crypto_df)
-            v1_stock_df = add_entry_exit_signals(v1_stock_df)
-
-            v1_result = run_backtest_v1(v1_stock_df)
-            bh_result = calculate_buy_and_hold(v1_stock_df)
-            v1_metrics = calculate_performance_metrics(
-                v1_result["trades"],
-                v1_result["initial_capital"],
-                v1_result["final_value"],
-                v1_stock_df,
-            )
-
-            # ------------------------
-            # Performance cards
-            # ------------------------
-            p1, p2, p3, p4 = st.columns(4)
-            p1.metric("Strategy Return", f"{v1_result['total_return_pct']}%")
-            p2.metric("Buy & Hold", f"{bh_result['total_return_pct']}%")
-            p3.metric("CAGR", f"{v1_metrics['cagr_pct']}%")
-            p4.metric("Win Rate", f"{v1_metrics['win_rate_pct']}%")
-
-            # ------------------------
-            # Main chart
-            # ------------------------
-            chart_df = v1_stock_df.set_index("date")[["close", "ma200"]]
-            st.line_chart(chart_df, height=420)
-
-            # ------------------------
-            # Signals / diagnostics
-            # ------------------------
-            with st.expander("Trade signals & diagnostics"):
-                signal_points = v1_stock_df[
-                    v1_stock_df["signal"].notna()
-                ][["date", "close", "signal", "execution_price"]]
-
-                if len(signal_points) > 0:
-                    st.dataframe(signal_points, use_container_width=True, hide_index=True)
-                else:
-                    st.info("這段期間沒有觸發訊號。")
-
-                if v1_metrics["completed_trades"]:
-                    diagnostics = build_trade_diagnostics(
-                        v1_stock_df,
-                        v1_metrics["completed_trades"],
-                    )
-                    diag_df = pd.DataFrame(diagnostics)
-                    st.dataframe(diag_df, use_container_width=True, hide_index=True)
-
-            # ------------------------
-            # Strategy versions
-            # ------------------------
-            st.markdown('<div class="section-title">Strategy Versions</div>', unsafe_allow_html=True)
-            st.caption("V1 vs fixed take-profit vs trailing exit vs Buy & Hold")
-
-            with st.spinner("Comparing strategy versions..."):
-                v1_eq_result = run_backtest_v1_with_equity_curve(v1_stock_df)
-                v1_eq_risk = calculate_risk_metrics(v1_eq_result["equity_curve"])
-                v1_eq_perf = calculate_performance_metrics(
-                    v1_eq_result["trades"],
-                    v1_eq_result["initial_capital"],
-                    v1_eq_result["final_value"],
-                    v1_stock_df,
-                )
-                row_v1 = build_comparison_row(
-                    symbol, "V1", v1_eq_result, v1_eq_risk, v1_eq_perf
-                )
-
-                tp_result = run_backtest_v1_with_takeprofit_v2(
-                    v1_stock_df,
-                    take_profit_pct=25.0,
-                )
-                tp_perf = calculate_performance_metrics(
-                    tp_result["trades"],
-                    tp_result["initial_capital"],
-                    tp_result["final_value"],
-                    v1_stock_df,
-                )
-                row_tp = build_comparison_row(
-                    symbol, "V1+TakeProfit25", tp_result, None, tp_perf
-                )
-
-                trail_result = run_backtest_v1_with_trailing_exit(
-                    v1_stock_df,
-                    trailing_pct=20.0,
-                )
-                trail_perf = calculate_performance_metrics(
-                    trail_result["trades"],
-                    trail_result["initial_capital"],
-                    trail_result["final_value"],
-                    v1_stock_df,
-                )
-                row_trail = build_comparison_row(
-                    symbol, "V1+Trailing20", trail_result, None, trail_perf
-                )
-
-                row_bh = build_comparison_row(
-                    symbol, "Buy&Hold", bh_result, None, None
-                )
-
-            comparison_df = pd.DataFrame(
-                [row_v1, row_tp, row_trail, row_bh]
-            )
-
-            def color_return(val):
-                if pd.isna(val):
-                    return ""
-                color = "#00D9A0" if val > 0 else "#FF4B4B"
-                return f"color: {color}; font-weight: bold"
-
-            styled_df = comparison_df.style.map(
-                color_return,
-                subset=["Return_pct", "CAGR_pct"],
-            )
-            st.dataframe(styled_df, use_container_width=True, hide_index=True)
-
-            # ------------------------
-            # Market regime
-            # ------------------------
-            with st.expander("Market regime"):
-                st.caption(
-                    "SPY + BTC 200-day trend → Risk-On / Risk-Off / Mixed"
-                )
-                with st.spinner("Analyzing market regime..."):
-                    regime_df = build_regime_series(period="2y")
-
-                regime_counts = regime_df["regime"].value_counts()
-                r1, r2, r3 = st.columns(3)
-                r1.metric("Risk-On", regime_counts.get("Risk-On", 0))
-                r2.metric("Risk-Off", regime_counts.get("Risk-Off", 0))
-                r3.metric("Mixed", regime_counts.get("Mixed", 0))
-
-            st.caption(
-                "⚠️ 回測僅供研究用途。過去績效不代表未來績效。"
-            )
-
-    # ========================================================
-    # TAB 3 — RESEARCH & DATA
-    # ========================================================
-
-    with tab_research:
-        left, right = st.columns(2)
-
-        with left:
-            with st.expander("Company fundamentals", expanded=True):
-                if overview:
-                    for key, value in overview.items():
-                        if key == "公司簡介":
-                            st.markdown(f"**{key}**")
-                            st.write(value)
-                        else:
-                            st.markdown(f"**{key}**：{value}")
-                else:
-                    st.write("未取得公司基本面資料。")
-
-        with right:
-            with st.expander("Structured AI data", expanded=True):
-                if structured:
-                    st.json(structured)
-                else:
-                    st.warning("未能解析結構化數據。")
-
-        with st.expander("Raw price data"):
-            st.dataframe(
-                df.sort_values("date", ascending=False),
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        # ----------------------------------------------------
-        # Historical predictions
-        # ----------------------------------------------------
-        st.markdown('<div class="section-title">Prediction History</div>', unsafe_allow_html=True)
-        st.caption("查看過去 AI 預測，並在之後驗證結果。")
-
-        all_predictions = list_predictions()
-
-        if not all_predictions:
-            st.info("目前還沒有任何預測紀錄。")
+            st.info("No sufficiently matched recent headlines are available. Uncertain matches are hidden. Check Data coverage & providers for source issues.")
+    with filing_col:
+        st.markdown("### SEC / Company Filings")
+        if payload["filings"]:
+            for item in payload["filings"][:5]:
+                title = f"{item['type']} · {item['title']}"
+                url = html.escape(item.get("url", ""), quote=True)
+                link = f'<a href="{url}" target="_blank">{html.escape(title)}</a>' if url else html.escape(title)
+                st.markdown(f'<div class="event-card">{link}<div class="event-meta">{html.escape(item["date"])}</div></div>', unsafe_allow_html=True)
         else:
-            options = [
-                f"{r['ticker']} — {r['timestamp']}"
-                for r in all_predictions
-            ]
-            selected_index = st.selectbox(
-                "Prediction",
-                range(len(options)),
-                format_func=lambda i: options[i],
-                label_visibility="collapsed",
-            )
+            st.info("No company filings are available from the current sources. Check SEC configuration and provider status above.")
 
-            selected_record = all_predictions[selected_index]
+    st.markdown("### AI Key Takeaways")
+    st.caption("AI summarizes only the displayed prices, fundamentals, and news. It does not provide price targets or trading instructions.")
+    provider = compact_ai_provider()
+    if provider:
+        st.caption(f"Summary provider: {provider}")
+    summary_key = f"compact_summary_{symbol}"
+    if summary_key in st.session_state:
+        st.markdown(st.session_state[summary_key])
+    if st.button("Generate 3–5 Takeaways", key=f"summary_button_{symbol}"):
+        if not has_compact_ai_key():
+            st.warning("GEMINI_API_KEY or ANTHROPIC_API_KEY is not configured, so an AI summary cannot be generated.")
+        else:
+            try:
+                with st.spinner("Preparing key takeaways…"):
+                    summary = generate_compact_summary(symbol, prices, payload["news"], overview)
+                st.session_state[summary_key] = summary
+                st.rerun()
+            except Exception as exc:
+                st.error(f"AI summary is temporarily unavailable: {exc}")
 
-            a1, a2, a3, a4 = st.columns(4)
-            a1.metric(
-                "Price at Prediction",
-                f"${selected_record.get('current_price_at_prediction', 'N/A')}"
-            )
-            a2.metric(
-                "Bull",
-                f"{selected_record.get('bull_low', 'N/A')} ~ {selected_record.get('bull_high', 'N/A')}"
-            )
-            a3.metric(
-                "Base",
-                f"{selected_record.get('base_low', 'N/A')} ~ {selected_record.get('base_high', 'N/A')}"
-            )
-            a4.metric(
-                "Bear",
-                f"{selected_record.get('bear_low', 'N/A')} ~ {selected_record.get('bear_high', 'N/A')}"
-            )
 
-            if selected_record.get("outcome_checked"):
-                st.success("這筆預測已經驗證過結果")
-                st.write(
-                    f"驗證時間：{selected_record.get('checked_at')} · "
-                    f"實際報酬率：{selected_record.get('actual_return_pct')}% · "
-                    f"情境：{selected_record.get('which_scenario_occurred')}"
-                )
-            else:
-                st.info("這筆預測尚未驗證結果")
-                if st.button("Verify current price", type="secondary"):
-                    with st.spinner("Checking latest price..."):
-                        raw = get_daily_stock_data(selected_record["ticker"])
-                        if "Time Series (Daily)" in raw:
-                            latest_df = clean_stock_data(raw)
-                            actual_price = latest_df["close"].iloc[-1]
-                            updated = check_prediction_outcome(
-                                selected_record,
-                                actual_price,
-                            )
-                            st.success(
-                                f"驗證完成：${actual_price} · "
-                                f"{updated['which_scenario_occurred']}"
-                            )
-                            st.rerun()
-                        else:
-                            st.error("查詢目前股價失敗，請稍後再試。")
+def render_strategy_health() -> None:
+    _header("Strategy Health", "V12 + E3 Strategy Health", "The same system checks and evidence panels for each frozen strategy.")
+    _paper_banner()
+    render_paired_page("health", _dashboard_state(), _e3_view())
 
-    st.markdown(
-        '<div class="disclaimer">For education and research only. Not financial advice.</div>',
-        unsafe_allow_html=True,
-    )
+
+def render_accounting() -> None:
+    _header("Accounting", "V12 + E3 Accounting", "Cash, positions, costs and dividends for each independent account.")
+    _paper_banner()
+    render_paired_page("accounting", _dashboard_state(), _e3_view())
+
+
+def main() -> None:
+    _inject_style()
+    with st.sidebar:
+        st.markdown(
+            '<div class="brand-kicker">FORWARD RESEARCH</div>'
+            '<div class="brand-title">V12 + E3 Dashboard</div>'
+            '<div class="brand-meta">V12 + E3 paper accounts<br>Read-only interface</div>',
+            unsafe_allow_html=True,
+        )
+        st.divider()
+    navigation = st.navigation([
+        st.Page(render_overview, title="Overview", default=True),
+        st.Page(render_activity, title="Activity"),
+        st.Page(render_market, title="Market Intelligence"),
+        st.Page(render_strategy_health, title="Strategy Health"),
+        st.Page(render_accounting, title="Accounting", url_path="accounting"),
+    ])
+    navigation.run()
+    st.markdown('<div class="footer-note">For education and research only. Paper trading is not a real execution, and past performance does not predict future results.</div>', unsafe_allow_html=True)
+
+
+if __name__ == "__main__":
+    main()

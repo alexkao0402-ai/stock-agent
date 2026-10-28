@@ -1,0 +1,4 @@
+Stage A selected filter: F1 stock filter only
+Rule: highest research Sharpe, then Sortino, then shallower drawdown.
+Research end: 2025-04-28
+OOS start: 2025-04-28

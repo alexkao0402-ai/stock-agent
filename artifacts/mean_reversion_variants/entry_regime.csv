@@ -1,0 +1,29 @@
+Variant,Entry Regime,Completed Trades,Win Rate %,Median Trade Return %,Total PnL $
+A F0 both filters,Bull,69,66.666667,1.871968,5646.406085
+A F0 both filters,Bear,0,,,0.000000
+A F1 stock filter only,Bull,69,66.666667,1.871968,6205.520806
+A F1 stock filter only,Bear,7,71.428571,6.728891,2201.796992
+A F2 market filter only,Bull,88,70.454545,1.958061,10972.146348
+A F2 market filter only,Bear,0,,,0.000000
+A F3 no filters,Bull,88,70.454545,1.958061,11063.755536
+A F3 no filters,Bear,21,66.666667,2.379020,2771.545642
+B H5 MA20 or 5D (F1 stock filter only),Bull,86,52.325581,0.307442,4025.843457
+B H5 MA20 or 5D (F1 stock filter only),Bear,9,55.555556,0.418501,1431.915584
+B H10 MA20 or 10D (F1 stock filter only),Bull,69,66.666667,1.871968,6205.520806
+B H10 MA20 or 10D (F1 stock filter only),Bear,7,71.428571,6.728891,2201.796992
+B H15 MA20 or 15D (F1 stock filter only),Bull,63,74.603175,1.915407,7205.370488
+B H15 MA20 or 15D (F1 stock filter only),Bear,6,100.000000,5.857926,2250.647926
+B H20 MA20 or 20D (F1 stock filter only),Bull,61,75.409836,1.915407,7483.828977
+B H20 MA20 or 20D (F1 stock filter only),Bear,6,100.000000,6.991886,2444.551352
+C E0 MA20 or 10D (F1 stock filter only),Bull,69,66.666667,1.871968,6205.520806
+C E0 MA20 or 10D (F1 stock filter only),Bear,7,71.428571,6.728891,2201.796992
+C E1 MA20 or 5D (F1 stock filter only),Bull,86,52.325581,0.307442,4025.843457
+C E1 MA20 or 5D (F1 stock filter only),Bear,9,55.555556,0.418501,1431.915584
+C E2 MA20 or 20D (F1 stock filter only),Bull,61,75.409836,1.915407,7483.828977
+C E2 MA20 or 20D (F1 stock filter only),Bear,6,100.000000,6.991886,2444.551352
+C E3 time only 10D (F1 stock filter only),Bull,66,65.151515,1.738766,9059.267136
+C E3 time only 10D (F1 stock filter only),Bear,7,71.428571,6.728891,3720.379149
+C E4 time only 20D (F1 stock filter only),Bull,49,71.428571,3.682843,17517.545617
+C E4 time only 20D (F1 stock filter only),Bear,6,66.666667,7.711303,3411.063172
+Benchmark Cross-Sectional Momentum,Bull,71,40.845070,-1.977757,-85436.431524
+Benchmark Cross-Sectional Momentum,Bear,0,,,0.000000

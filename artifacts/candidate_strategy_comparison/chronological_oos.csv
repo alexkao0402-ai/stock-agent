@@ -1,0 +1,5 @@
+Strategy,Start,End,Return %,Sharpe,Alpha vs SPY %,Alpha vs Equal Weight %,Sessions
+Bollinger Band Mean Reversion,2025-04-28,2026-10-23,45.791822,1.457728,5.486738,-10.986592,376
+Donchian Breakout,2025-04-28,2026-10-23,35.919070,1.038375,-4.386013,-20.859344,376
+Volatility Contraction Breakout,2025-04-28,2026-10-23,15.048967,0.682917,-25.256117,-41.729447,376
+Cross-Sectional Momentum,2025-04-28,2026-10-23,30.394530,0.894157,-9.910554,-26.383884,376
